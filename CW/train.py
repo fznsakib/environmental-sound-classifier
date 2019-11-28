@@ -110,32 +110,32 @@ def main(args):
         pin_memory=True,
     )
 
-    # model = CNN(height=32, width=32, channels=3, class_count=10, dropout=args.dropout)
+    model = CNN(height=32, width=32, channels=3, class_count=10, dropout=args.dropout)
 
-    # ## TASK 8: Redefine the criterion to be softmax cross entropy
-    # criterion = nn.CrossEntropyLoss()
+    ## TASK 8: Redefine the criterion to be softmax cross entropy
+    criterion = nn.CrossEntropyLoss()
 
-    # ## TASK 11: Define the optimizer
-    # optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, args.sgd_momentum)
+    ## TASK 11: Define the optimizer
+    optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, args.sgd_momentum)
 
-    # log_dir = get_summary_writer_log_dir(args)
-    # print(f"Writing logs to {log_dir}")
-    # summary_writer = SummaryWriter(
-    #         str(log_dir),
-    #         flush_secs=5
-    # )
-    # trainer = Trainer(
-    #     model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
-    # )
+    log_dir = get_summary_writer_log_dir(args)
+    print(f"Writing logs to {log_dir}")
+    summary_writer = SummaryWriter(
+            str(log_dir),
+            flush_secs=5
+    )
+    trainer = Trainer(
+        model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
+    )
 
-    # trainer.train(
-    #     args.epochs,
-    #     args.val_frequency,
-    #     print_frequency=args.print_frequency,
-    #     log_frequency=args.log_frequency,
-    # )
+    trainer.train(
+        args.epochs,
+        args.val_frequency,
+        print_frequency=args.print_frequency,
+        log_frequency=args.log_frequency,
+    )
 
-    # summary_writer.close()
+    summary_writer.close()
 
 
 class CNN(nn.Module):
