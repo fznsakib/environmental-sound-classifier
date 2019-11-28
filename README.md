@@ -1,11 +1,16 @@
 # deep-learning
-Coursework for the Applied Deep Learning unit at the University of Bristol. Labs include implementing the fundamentals of deep learning such as:
+Coursework for the Applied Deep Learning unit at the University of Bristol. 
 
-- Fully connected layers
+## Labs 
+
+The labsheets involve implementing the fundamentals of deep learning to create fully connected layers and Convolutional Neural Networks which included:
+
 - Stochastic descent
-- Convolutional neural networks
-- Tensorboard monitoring
+- Pooling
+- Batch based training
 - Hyperparameters (learning rate, batch size, etc)
 - Data augmentation
+- Dropout
+- Tensorboard monitoring
 
-Code is written in Python 3 with PyTorch.
+Code is written in Python 3 with the machine learning framework PyTorch.
