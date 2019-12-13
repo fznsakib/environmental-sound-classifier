@@ -275,6 +275,12 @@ class Trainer:
         for epoch in range(start_epoch, epochs):
             self.model.train()
             data_load_start_time = time.time()
+            # print(self.train_loader)
+            # print(self.train_loader[0])
+            
+            for batch in self.train_loader:
+                print(batch)
+            
             for batch, labels in self.train_loader:
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
@@ -352,7 +358,7 @@ class Trainer:
         results = {"preds": [], "labels": []}
         total_loss = 0
         self.model.eval()
-
+        
         # No need to track gradients for validation, we're not optimizing.
         with torch.no_grad():
             for batch, labels in self.test_loader:
