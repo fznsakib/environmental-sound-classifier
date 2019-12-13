@@ -99,7 +99,7 @@ def main(args):
         pin_memory=True,
     )
     
-    val_loader = torch.utils.data.DataLoader(
+    test_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_test.pkl", mode),
         batch_size=args.batch_size,
         shuffle=True,
@@ -248,7 +248,7 @@ class Trainer:
         self,
         model: nn.Module,
         train_loader: DataLoader,
-        val_loader: DataLoader,
+        test_loader: DataLoader,
         criterion: nn.Module,
         optimizer: Optimizer,
         summary_writer: SummaryWriter,
@@ -257,7 +257,7 @@ class Trainer:
         self.model = model.to(device)
         self.device = device
         self.train_loader = train_loader
-        self.val_loader = val_loader
+        self.test_loader = test_loader
         self.criterion = criterion
         self.optimizer = optimizer
         self.summary_writer = summary_writer
@@ -355,7 +355,7 @@ class Trainer:
 
         # No need to track gradients for validation, we're not optimizing.
         with torch.no_grad():
-            for batch, labels in self.val_loader:
+            for batch, labels in self.test_loader:
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
                 logits = self.model(batch)
@@ -366,7 +366,7 @@ class Trainer:
                 results["labels"].extend(list(labels.cpu().numpy()))
 
         accuracy = compute_accuracy(np.array(results["labels"]), np.array(results["preds"]))
-        average_loss = total_loss / len(self.val_loader)
+        average_loss = total_loss / len(self.test_loader)
 
         per_class_accuracies = compute_per_class_accuracies(np.array(results["labels"]), np.array(results["preds"]))
 
