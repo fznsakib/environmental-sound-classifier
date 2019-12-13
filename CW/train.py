@@ -31,9 +31,9 @@ parser = argparse.ArgumentParser(
 default_dataset_dir = os.getcwd() + '/data/'
 parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
-parser.add_argument("--learning-rate", default=1e-2, type=float, help="Learning rate")
-parser.add_argument("--sgd-momentum", default=0, type=float)
-parser.add_argument("--dropout", default=0, type=float)
+parser.add_argument("--learning-rate", default=0.001, type=float, help="Learning rate")
+parser.add_argument("--sgd-momentum", default=0.9, type=float)
+parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--mode", default='LMC', type=str)
 parser.add_argument(
     "--batch-size",
@@ -99,9 +99,6 @@ def main(args):
         pin_memory=True,
     )
     
-    
-    # print(train_loader)
-    
     val_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_test.pkl", mode),
         batch_size=args.batch_size,
@@ -110,7 +107,7 @@ def main(args):
         pin_memory=True,
     )
 
-    model = CNN(height=32, width=32, channels=3, class_count=10, dropout=args.dropout)
+    model = CNN(height=85, width=41, channels=3, class_count=10, dropout=args.dropout)
 
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
@@ -124,6 +121,7 @@ def main(args):
             str(log_dir),
             flush_secs=5
     )
+    
     trainer = Trainer(
         model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
     )
@@ -145,66 +143,95 @@ class CNN(nn.Module):
         self.class_count = class_count
         self.dropout = nn.Dropout(dropout)
 
+        # First convolutional layer 
         self.conv1 = nn.Conv2d(
             in_channels=self.input_shape.channels,
             out_channels=32,
-            kernel_size=(5, 5),
-            padding=(2, 2),
+            kernel_size=(3, 3),
+            padding=(1, 1)
         )
+        
         self.initialise_layer(self.conv1)
-        self.pool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-
         self.batchNorm1 = nn.BatchNorm2d(32)
         
-        ## TASK 2-1: Define the second convolutional layer and initialise its parameters
+        # Second convolutional layer 
         self.conv2 = nn.Conv2d(
             in_channels=32,
-            out_channels=64,
-            kernel_size=(5, 5),
-            padding=(2, 2),
+            out_channels=32,
+            kernel_size=(3, 3),
+            padding=(1, 1)
         )
+        
         self.initialise_layer(self.conv2)
-
-        ## TASK 3-1: Define the second pooling layer
+        self.batchNorm2 = nn.BatchNorm2d(32)
         self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-        self.batchNorm2 = nn.BatchNorm2d(64)
-
-        ## TASK 5-1: Define the first FC layer and initialise its parameters
-        self.fc1 = nn.Linear(4096, 1024)
+        # Third convolutional layer 
+        self.conv3 = nn.Conv2d(
+            in_channels=32,
+            out_channels=64,
+            kernel_size=(3, 3),
+            padding=(1, 1)
+        )
+        self.initialise_layer(self.conv3)
+        self.batchNorm3 = nn.BatchNorm2d(64)
+        
+        # Fourth convolutional layer
+        self.conv4 = nn.Conv2d(
+            in_channels=64,
+            out_channels=64,
+            kernel_size=(3, 3),
+            padding=(1, 1)
+        )
+        
+        self.initialise_layer(self.conv4)
+        self.batchNorm4 = nn.BatchNorm2d(64)
+        self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+        
+        ## First fully connected layer
+        self.fc1 = nn.Linear(15488, 1024)
         self.initialise_layer(self.fc1)
+        # self.batchNorm5 = nn.BatchNorm1d(1024)
 
-        self.batchNorm3 = nn.BatchNorm1d(1024)
-
-        ## TASK 6-1: Define the last FC layer and initialise its parameters
+        ## Second fully connected layer
         self.fc2 = nn.Linear(1024, 10)
         self.initialise_layer(self.fc2)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
+        # First convolutional layer pass
         x = self.conv1(images)
         x = self.batchNorm1(x)
         x = F.relu(x)
-        x = self.pool1(x)
 
-        ## TASK 2-2: Pass x through the second convolutional layer
-        x = self.conv2(x)
+        # Second convolutional layer pass
+        x = self.conv2(self.dropout(x))
         x = self.batchNorm2(x)
         x = F.relu(x)
-
-        ## TASK 3-2: Pass x through the second pooling layer
         x = self.pool2(x)
-
+        
+        # Third convolutional layer pass
+        x = self.conv3(x)
+        x = self.batchNorm3(x)
+        x = F.relu(x)
+        
+        # Fourth convolutional layer pass
+        x = self.conv4(self.dropout(x))
+        x = self.batchNorm4(x)
+        x = F.relu(x) 
+        x = self.pool4(x)  
+        
         ## TASK 4: Flatten the output of the pooling layer so it is of shape
         ## (batch_size, 4096)
         x = torch.flatten(x, start_dim=1)
 
-        ## TASK 5-2: Pass x through the first fully connected layer
+        # First fully connected layer pass
         x = self.fc1(self.dropout(x))
-        x = self.batchNorm3(x)
-        x = F.relu(x)
-
+        # x = self.batchNorm5(x)
+        x = F.Sigmoid(x)
+        
         ## TASK 6-2: Pass x through the last fully connected layer
         x = self.fc2(self.dropout(x))
+        x = F.softmax(x)
 
         return x
 
@@ -413,7 +440,6 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
             return str(tb_log_dir)
         i += 1
     return str(tb_log_dir)
-
 
 if __name__ == "__main__":
     main(parser.parse_args())

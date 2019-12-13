@@ -19,7 +19,7 @@ class UrbanSound8KDataset(data.Dataset):
                                      self.dataset[index]['features']['Tonnetz']]}
             
             feature = torch.from_numpy(feature.astype(np.float32)).unsqueeze(0)
-            print(feature)        
+
         elif self.mode == 'MC':
             # Edit here to load and concatenate the neccessary features to 
             # create the MC feature
