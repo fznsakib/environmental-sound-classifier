@@ -68,7 +68,7 @@ parser.add_argument(
 parser.add_argument(
     "-j",
     "--worker-count",
-    default=cpu_count(),
+    default=8,
     type=int,
     help="Number of worker processes used to load data.",
 )
@@ -90,7 +90,7 @@ def main(args):
     # Data augmentation goes here
 
     mode = args.mode
-    
+
     train_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_train.pkl", mode),
         batch_size=args.batch_size,
@@ -98,16 +98,16 @@ def main(args):
         num_workers=args.worker_count,
         pin_memory=True,
     )
-    
+
     test_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_test.pkl", mode),
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=args.worker_count,
         pin_memory=True,
     )
 
-    model = CNN(height=85, width=41, channels=3, class_count=10, dropout=args.dropout)
+    model = CNN(height=85, width=41, channels=1, class_count=10, dropout=args.dropout)
 
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
@@ -121,7 +121,7 @@ def main(args):
             str(log_dir),
             flush_secs=5
     )
-    
+
     trainer = Trainer(
         model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
     )
@@ -143,30 +143,30 @@ class CNN(nn.Module):
         self.class_count = class_count
         self.dropout = nn.Dropout(dropout)
 
-        # First convolutional layer 
+        # First convolutional layer
         self.conv1 = nn.Conv2d(
             in_channels=self.input_shape.channels,
             out_channels=32,
             kernel_size=(3, 3),
             padding=(1, 1)
         )
-        
+
         self.initialise_layer(self.conv1)
         self.batchNorm1 = nn.BatchNorm2d(32)
-        
-        # Second convolutional layer 
+
+        # Second convolutional layer
         self.conv2 = nn.Conv2d(
             in_channels=32,
             out_channels=32,
             kernel_size=(3, 3),
             padding=(1, 1)
         )
-        
+
         self.initialise_layer(self.conv2)
         self.batchNorm2 = nn.BatchNorm2d(32)
         self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-        # Third convolutional layer 
+        # Third convolutional layer
         self.conv3 = nn.Conv2d(
             in_channels=32,
             out_channels=64,
@@ -175,7 +175,7 @@ class CNN(nn.Module):
         )
         self.initialise_layer(self.conv3)
         self.batchNorm3 = nn.BatchNorm2d(64)
-        
+
         # Fourth convolutional layer
         self.conv4 = nn.Conv2d(
             in_channels=64,
@@ -183,13 +183,13 @@ class CNN(nn.Module):
             kernel_size=(3, 3),
             padding=(1, 1)
         )
-        
+
         self.initialise_layer(self.conv4)
         self.batchNorm4 = nn.BatchNorm2d(64)
         self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        
+
         ## First fully connected layer
-        self.fc1 = nn.Linear(15488, 1024)
+        self.fc1 = nn.Linear(13440, 1024) # 13440 = 10 * 21 * 64
         self.initialise_layer(self.fc1)
         # self.batchNorm5 = nn.BatchNorm1d(1024)
 
@@ -208,18 +208,18 @@ class CNN(nn.Module):
         x = self.batchNorm2(x)
         x = F.relu(x)
         x = self.pool2(x)
-        
+
         # Third convolutional layer pass
         x = self.conv3(x)
         x = self.batchNorm3(x)
         x = F.relu(x)
-        
+
         # Fourth convolutional layer pass
         x = self.conv4(self.dropout(x))
         x = self.batchNorm4(x)
-        x = F.relu(x) 
-        x = self.pool4(x)  
-        
+        x = F.relu(x)
+        x = self.pool4(x)
+
         ## TASK 4: Flatten the output of the pooling layer so it is of shape
         ## (batch_size, 4096)
         x = torch.flatten(x, start_dim=1)
@@ -227,8 +227,8 @@ class CNN(nn.Module):
         # First fully connected layer pass
         x = self.fc1(self.dropout(x))
         # x = self.batchNorm5(x)
-        x = F.Sigmoid(x)
-        
+        x = F.sigmoid(x)
+
         ## TASK 6-2: Pass x through the last fully connected layer
         x = self.fc2(self.dropout(x))
         x = F.softmax(x)
@@ -277,19 +277,16 @@ class Trainer:
             data_load_start_time = time.time()
             # print(self.train_loader)
             # print(self.train_loader[0])
-            
-            for batch in self.train_loader:
-                print(batch)
-            
-            for batch, labels in self.train_loader:
-                batch = batch.to(self.device)
+
+            for i, (input, labels, filename) in enumerate(self.train_loader):
+                input = input.to(self.device)
                 labels = labels.to(self.device)
                 data_load_end_time = time.time()
 
                 ## TASK 1: Compute the forward pass of the model, print the output shape
                 ## and quit the program
                 ## TASK 7: Rename `output` to `logits`
-                logits = self.model.forward(batch)
+                logits = self.model.forward(input)
 
                 ## TASK 9: Compute the loss using self.criterion and
                 ##         store it in a variable called `loss`
@@ -358,7 +355,7 @@ class Trainer:
         results = {"preds": [], "labels": []}
         total_loss = 0
         self.model.eval()
-        
+
         # No need to track gradients for validation, we're not optimizing.
         with torch.no_grad():
             for batch, labels in self.test_loader:
@@ -403,7 +400,7 @@ def compute_accuracy(
 
 
 def compute_per_class_accuracies(labels: Union[torch.Tensor, np.ndarray], preds: Union[torch.Tensor, np.ndarray]) -> float:
-    
+
     class_accuracies = {}
     classes = np.unique(labels)
 
@@ -416,7 +413,7 @@ def compute_per_class_accuracies(labels: Union[torch.Tensor, np.ndarray], preds:
         # Calculate class accuracy
         class_accuracy = float(class_matches / (labels == c).sum())
         class_accuracies[c] = class_accuracy
-    
+
     return class_accuracies
 
 def get_summary_writer_log_dir(args: argparse.Namespace) -> str:

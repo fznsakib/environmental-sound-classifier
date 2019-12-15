@@ -13,33 +13,31 @@ class UrbanSound8KDataset(data.Dataset):
         feature = 0
 
         if self.mode == 'LMC':
-            # Edit here to load and concatenate the neccessary features to 
+            # Edit here to load and concatenate the neccessary features to
             # create the LMC feature
-            feature = np.array [ 
-                                self.dataset[index]['features']['logmelspec'], 
-                                self.dataset[index]['features']['chroma'],
-                                self.dataset[index]['features']['spectral_contrast'],
-                                self.dataset[index]['features']['tonnetz']
-                            ]
+            feature = self.dataset[index]['features']['logmelspec']
+            feature = np.concatenate([feature, self.dataset[index]['features']['chroma']])
+            feature = np.concatenate([feature, self.dataset[index]['features']['spectral_contrast']])
+            feature = np.concatenate([feature, self.dataset[index]['features']['tonnetz']])
 
         elif self.mode == 'MC':
-            # Edit here to load and concatenate the neccessary features to 
+            # Edit here to load and concatenate the neccessary features to
             # create the MC feature
-            feature = np.array [ 
-                    self.dataset[index]['features']['mfcc'],
-                    self.dataset[index]['features']['chroma'],
-                    self.dataset[index]['features']['spectral_contrast'],
-                    self.dataset[index]['features']['tonnetz']
-                ]
-            
+            feature = self.dataset[index]['features']['mfcc']
+            feature = np.concatenate(feature, self.dataset[index]['features']['mfcc'])
+            feature = np.concatenate(feature, self.dataset[index]['features']['chroma'])
+            feature = np.concatenate(feature, self.dataset[index]['features']['spectral_contrast'])
+            feature = np.concatenate(feature, self.dataset[index]['features']['tonnetz'])
+
         elif self.mode == 'MLMC':
-            # Edit here to load and concatenate the neccessary features to 
+            # Edit here to load and concatenate the neccessary features to
             # create the MLMC feature
-            feature = np.array[self.dataset[index]['features']]
-                  
+            feature = np.array([])
+            feature = np.concatenate(feature, self.dataset[index]['features']['mfcc'])
+
 
         feature = torch.from_numpy(feature.astype(np.float32)).unsqueeze(0)
-           
+
         label = self.dataset[index]['classID']
         fname = self.dataset[index]['filename']
         return feature, label, fname
