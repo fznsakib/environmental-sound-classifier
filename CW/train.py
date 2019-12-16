@@ -107,7 +107,7 @@ def main(args):
         pin_memory=True,
     )
 
-    model = CNN(height=60, width=41, channels=1, class_count=10, dropout=args.dropout)
+    model = CNN(height=85, width=41, channels=1, class_count=10, dropout=args.dropout)
 
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
