@@ -107,7 +107,7 @@ def main(args):
         pin_memory=True,
     )
 
-    model = CNN(height=85, width=41, channels=1, class_count=10, dropout=args.dropout)
+    model = CNN(height=60, width=41, channels=1, class_count=10, dropout=args.dropout)
 
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
@@ -164,7 +164,7 @@ class CNN(nn.Module):
 
         self.initialise_layer(self.conv2)
         self.batchNorm2 = nn.BatchNorm2d(32)
-        self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+        self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         # Third convolutional layer
         self.conv3 = nn.Conv2d(
@@ -186,10 +186,10 @@ class CNN(nn.Module):
 
         self.initialise_layer(self.conv4)
         self.batchNorm4 = nn.BatchNorm2d(64)
-        self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+        self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         ## First fully connected layer
-        self.fc1 = nn.Linear(13440, 1024) # 13440 = 10 * 21 * 64
+        self.fc1 = nn.Linear(15488, 1024) # 15488 = 11 * 22 * 64
         self.initialise_layer(self.fc1)
         # self.batchNorm5 = nn.BatchNorm1d(1024)
 
