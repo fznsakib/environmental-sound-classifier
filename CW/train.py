@@ -68,7 +68,7 @@ parser.add_argument(
 parser.add_argument(
     "-j",
     "--worker-count",
-    default=8,
+    default=cpu_count(),
     type=int,
     help="Number of worker processes used to load data.",
 )
@@ -113,7 +113,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, args.sgd_momentum)
+    optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, args.sgd_momentum, weight_decay=0.0001)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
@@ -145,7 +145,7 @@ class CNN(nn.Module):
 
         # First convolutional layer
         self.conv1 = nn.Conv2d(
-            in_channels=self.input_shape.channels,
+            in_channels=self.input_shape.channels, # Checkout input channel count
             out_channels=32,
             kernel_size=(3, 3),
             padding=(1, 1)
@@ -222,7 +222,7 @@ class CNN(nn.Module):
 
         ## TASK 4: Flatten the output of the pooling layer so it is of shape
         ## (batch_size, 4096)
-        x = torch.flatten(x, start_dim=1)
+        x = torch.flatten(x, start_dim=1, end_dim=3)
 
         # First fully connected layer pass
         x = self.fc1(self.dropout(x))
@@ -230,7 +230,7 @@ class CNN(nn.Module):
         x = F.sigmoid(x)
 
         ## TASK 6-2: Pass x through the last fully connected layer
-        x = self.fc2(self.dropout(x))
+        x = self.fc2(x)
         x = F.softmax(x)
 
         return x
@@ -275,8 +275,6 @@ class Trainer:
         for epoch in range(start_epoch, epochs):
             self.model.train()
             data_load_start_time = time.time()
-            # print(self.train_loader)
-            # print(self.train_loader[0])
 
             for i, (input, labels, filename) in enumerate(self.train_loader):
                 input = input.to(self.device)
@@ -358,10 +356,10 @@ class Trainer:
 
         # No need to track gradients for validation, we're not optimizing.
         with torch.no_grad():
-            for batch, labels in self.test_loader:
-                batch = batch.to(self.device)
+            for i, (input, labels, filename) in enumerate(self.test_loader):
+                input = input.to(self.device)
                 labels = labels.to(self.device)
-                logits = self.model(batch)
+                logits = self.model(input)
                 loss = self.criterion(logits, labels)
                 total_loss += loss.item()
                 preds = logits.argmax(dim=-1).cpu().numpy()
