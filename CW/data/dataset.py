@@ -24,10 +24,9 @@ class UrbanSound8KDataset(data.Dataset):
             # Edit here to load and concatenate the neccessary features to
             # create the MC feature
             feature = self.dataset[index]['features']['mfcc']
-            feature = np.concatenate(feature, self.dataset[index]['features']['mfcc'])
-            feature = np.concatenate(feature, self.dataset[index]['features']['chroma'])
-            feature = np.concatenate(feature, self.dataset[index]['features']['spectral_contrast'])
-            feature = np.concatenate(feature, self.dataset[index]['features']['tonnetz'])
+            feature = np.concatenate([feature, self.dataset[index]['features']['chroma']])
+            feature = np.concatenate([feature, self.dataset[index]['features']['spectral_contrast']])
+            feature = np.concatenate([feature, self.dataset[index]['features']['tonnetz']])
 
         elif self.mode == 'MLMC':
             # Edit here to load and concatenate the neccessary features to
