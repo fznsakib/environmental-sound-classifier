@@ -428,10 +428,9 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
     """
     tb_log_dir_prefix = (
       f"CNN_bn_"
-      f"dropout={args.dropout}_"
+      f"mode={args.mode}_"
       f"bs={args.batch_size}_"
       f"lr={args.learning_rate}_"
-      f"momentum={args.sgd_momentum}_" +
       f"run_"
     )
     i = 0
