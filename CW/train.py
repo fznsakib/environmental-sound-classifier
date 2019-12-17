@@ -87,7 +87,6 @@ else:
 
 
 def main(args):
-    # Data augmentation goes here
 
     mode = args.mode
 
@@ -281,19 +280,16 @@ class Trainer:
                 labels = labels.to(self.device)
                 data_load_end_time = time.time()
 
-                ## TASK 1: Compute the forward pass of the model, print the output shape
-                ## and quit the program
-                ## TASK 7: Rename `output` to `logits`
+                # Compute the forward pass of the model
                 logits = self.model.forward(input)
 
-                ## TASK 9: Compute the loss using self.criterion and
-                ##         store it in a variable called `loss`
+                # Compute the loss using self.criterion and store it
                 loss = self.criterion(logits, labels)
 
-                ## TASK 10: Compute the backward pass
+                # Compute the backward pass
                 loss.backward()
 
-                ## TASK 12: Step the optimizer and then zero out the gradient buffers.
+                # Step the optimizer and then zero out the gradient buffers.
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
