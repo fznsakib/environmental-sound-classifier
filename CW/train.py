@@ -43,7 +43,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--epochs",
-    default=20,
+    default=50,
     type=int,
     help="Number of epochs (passes through the entire dataset) to train for",
 )
@@ -149,7 +149,6 @@ class CNN(nn.Module):
             kernel_size=(3, 3),
             padding=(1, 1)
         )
-
         self.initialise_layer(self.conv1)
         self.batchNorm1 = nn.BatchNorm2d(32)
 
@@ -160,7 +159,6 @@ class CNN(nn.Module):
             kernel_size=(3, 3),
             padding=(1, 1)
         )
-
         self.initialise_layer(self.conv2)
         self.batchNorm2 = nn.BatchNorm2d(32)
         self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
@@ -180,12 +178,12 @@ class CNN(nn.Module):
             in_channels=64,
             out_channels=64,
             kernel_size=(3, 3),
+            stride=(2, 2),
             padding=(1, 1)
         )
-
         self.initialise_layer(self.conv4)
-        self.batchNorm4 = nn.BatchNorm2d(64)
-        self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
+        self.batchNorm4 = nn.BatchNorm2d(64)       
+        # self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         ## First fully connected layer
         self.fc1 = nn.Linear(15488, 1024) # 15488 = 11 * 22 * 64
@@ -217,7 +215,7 @@ class CNN(nn.Module):
         x = self.conv4(self.dropout(x))
         x = self.batchNorm4(x)
         x = F.relu(x)
-        x = self.pool4(x)
+        # x = self.pool4(x)
 
         ## TASK 4: Flatten the output of the pooling layer so it is of shape
         ## (batch_size, 4096)
@@ -275,13 +273,13 @@ class Trainer:
             self.model.train()
             data_load_start_time = time.time()
 
-            for i, (input, labels, filename) in enumerate(self.train_loader):
-                input = input.to(self.device)
+            for i, (batch, labels, filename) in enumerate(self.train_loader):
+                batch = batch.to(self.device)
                 labels = labels.to(self.device)
                 data_load_end_time = time.time()
 
                 # Compute the forward pass of the model
-                logits = self.model.forward(input)
+                logits = self.model.forward(batch)
 
                 # Compute the loss using self.criterion and store it
                 loss = self.criterion(logits, labels)
@@ -352,10 +350,10 @@ class Trainer:
 
         # No need to track gradients for validation, we're not optimizing.
         with torch.no_grad():
-            for i, (input, labels, filename) in enumerate(self.test_loader):
-                input = input.to(self.device)
+            for i, (batch, labels, filename) in enumerate(self.test_loader):
+                batch = batch.to(self.device)
                 labels = labels.to(self.device)
-                logits = self.model(input)
+                logits = self.model(batch)
                 loss = self.criterion(logits, labels)
                 total_loss += loss.item()
                 preds = logits.argmax(dim=-1).cpu().numpy()
