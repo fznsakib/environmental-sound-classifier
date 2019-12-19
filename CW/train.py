@@ -112,7 +112,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, args.sgd_momentum, weight_decay=0.0001)
+    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=0.0001)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
