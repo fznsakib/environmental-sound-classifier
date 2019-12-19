@@ -183,7 +183,6 @@ class CNN(nn.Module):
         )
         self.initialise_layer(self.conv4)
         self.batchNorm4 = nn.BatchNorm2d(64)       
-        # self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         ## First fully connected layer
         self.fc1 = nn.Linear(15488, 1024) # 15488 = 11 * 22 * 64
@@ -201,7 +200,10 @@ class CNN(nn.Module):
         x = F.relu(x)
 
         # Second convolutional layer pass
-        x = self.conv2(self.dropout(x))
+        # Dropout must be applied to layer and stored, instead of
+        # passing as input to next convolutional layer
+        x = self.dropout(x)
+        x = self.conv2(x)
         x = self.batchNorm2(x)
         x = F.relu(x)
         x = self.pool2(x)
@@ -212,17 +214,18 @@ class CNN(nn.Module):
         x = F.relu(x)
 
         # Fourth convolutional layer pass
-        x = self.conv4(self.dropout(x))
+        x = self.dropout(x)
+        x = self.conv4(x)
         x = self.batchNorm4(x)
         x = F.relu(x)
-        # x = self.pool4(x)
 
         ## TASK 4: Flatten the output of the pooling layer so it is of shape
         ## (batch_size, 4096)
         x = torch.flatten(x, start_dim=1, end_dim=3)
 
         # First fully connected layer pass
-        x = self.fc1(self.dropout(x))
+        x = self.dropout(x)
+        x = self.fc1(x)
         # x = self.batchNorm5(x)
         x = F.sigmoid(x)
 
@@ -346,6 +349,9 @@ class Trainer:
     def validate(self):
         results = {"preds": [], "labels": []}
         total_loss = 0
+        
+        # Turn on evaluation mode for network. This changes the behaviour of
+        # dropout and batch normalisation during validation.
         self.model.eval()
 
         # No need to track gradients for validation, we're not optimizing.
