@@ -89,10 +89,8 @@ else:
 
 def main(args):
 
-    mode = args.mode
-
     train_loader = torch.utils.data.DataLoader(
-        UrbanSound8KDataset("data/UrbanSound8K_train.pkl", mode),
+        UrbanSound8KDataset("data/UrbanSound8K_train.pkl", args.mode),
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.worker_count,
@@ -100,14 +98,14 @@ def main(args):
     )
 
     test_loader = torch.utils.data.DataLoader(
-        UrbanSound8KDataset("data/UrbanSound8K_test.pkl", mode),
+        UrbanSound8KDataset("data/UrbanSound8K_test.pkl", args.mode),
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.worker_count,
         pin_memory=True,
     )
 
-    model = CNN(height=85, width=41, channels=1, class_count=10, dropout=args.dropout)
+    model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
 
     # summary(model, (1, 85, 41)) # To print out layer parameters
 
@@ -115,7 +113,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0005)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
@@ -139,7 +137,7 @@ def main(args):
 
 
 class CNN(nn.Module):
-    def __init__(self, height: int, width: int, channels: int, class_count: int, dropout: float):
+    def __init__(self, height: int, width: int, channels: int, mode: str, class_count: int, dropout: float):
         super().__init__()
         self.input_shape = ImageShape(height=height, width=width, channels=channels)
         self.class_count = class_count
@@ -196,7 +194,7 @@ class CNN(nn.Module):
         
         # Shape of tensor output from 4th layer will be different due to difference in
         # input dimensions for MLMC. So number of input features to FC1 will be different.
-        if args.mode == 'MLMC':
+        if mode == 'MLMC':
             self.fc1 = nn.Linear(26048, 1024, bias=False)
   
         self.initialise_layer(self.fc1)
@@ -238,7 +236,6 @@ class CNN(nn.Module):
         # First fully connected layer pass
         x = self.dropout(x)
         x = self.fc1(x)
-        # x = self.batchNorm5(x)
         x = torch.sigmoid(x)
 
         ## TASK 6-2: Pass x through the last fully connected layer
