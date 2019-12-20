@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from data.dataset import UrbanSound8KDataset
+from torchsummary import summary
 
 import argparse
 from pathlib import Path
@@ -108,11 +109,13 @@ def main(args):
 
     model = CNN(height=85, width=41, channels=1, class_count=10, dropout=args.dropout)
 
+    # summary(model, (1, 85, 41)) # To print out layer parameters
+
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=0.0001)
+    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=0.001)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
@@ -147,7 +150,8 @@ class CNN(nn.Module):
             in_channels=self.input_shape.channels, # Checkout input channel count
             out_channels=32,
             kernel_size=(3, 3),
-            padding=(1, 1)
+            padding=(1, 1),
+            bias=False
         )
         self.initialise_layer(self.conv1)
         self.batchNorm1 = nn.BatchNorm2d(32)
@@ -157,7 +161,8 @@ class CNN(nn.Module):
             in_channels=32,
             out_channels=32,
             kernel_size=(3, 3),
-            padding=(1, 1)
+            padding=(1, 1),
+            bias=False
         )
         self.initialise_layer(self.conv2)
         self.batchNorm2 = nn.BatchNorm2d(32)
@@ -168,7 +173,8 @@ class CNN(nn.Module):
             in_channels=32,
             out_channels=64,
             kernel_size=(3, 3),
-            padding=(1, 1)
+            padding=(1, 1),
+            bias=False
         )
         self.initialise_layer(self.conv3)
         self.batchNorm3 = nn.BatchNorm2d(64)
@@ -179,10 +185,11 @@ class CNN(nn.Module):
             out_channels=64,
             kernel_size=(3, 3),
             stride=(2, 2),
-            padding=(1, 1)
+            padding=(1, 1),
+            bias=False
         )
         self.initialise_layer(self.conv4)
-        self.batchNorm4 = nn.BatchNorm2d(64)       
+        self.batchNorm4 = nn.BatchNorm2d(64)
 
         ## First fully connected layer
         self.fc1 = nn.Linear(15488, 1024) # 15488 = 11 * 22 * 64
@@ -237,7 +244,11 @@ class CNN(nn.Module):
 
     @staticmethod
     def initialise_layer(layer):
-        if hasattr(layer, "bias"):
+        # print(layer.bias)
+        # if layer.bias == None:
+        #     print("YESSSSS")
+        # elif hasattr(layer, "bias"):
+        if not (layer.bias is None):
             nn.init.zeros_(layer.bias)
         if hasattr(layer, "weight"):
             nn.init.kaiming_normal_(layer.weight)
@@ -349,7 +360,7 @@ class Trainer:
     def validate(self):
         results = {"preds": [], "labels": []}
         total_loss = 0
-        
+
         # Turn on evaluation mode for network. This changes the behaviour of
         # dropout and batch normalisation during validation.
         self.model.eval()
