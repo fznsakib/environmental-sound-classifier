@@ -31,9 +31,11 @@ class UrbanSound8KDataset(data.Dataset):
         elif self.mode == 'MLMC':
             # Edit here to load and concatenate the neccessary features to
             # create the MLMC feature
-            feature = np.array([])
-            feature = np.concatenate([feature, self.dataset[index]['features']['mfcc']])
-
+            feature = self.dataset[index]['features']['mfcc']
+            feature = np.concatenate([feature, self.dataset[index]['features']['logmelspec']])
+            feature = np.concatenate([feature, self.dataset[index]['features']['chroma']])
+            feature = np.concatenate([feature, self.dataset[index]['features']['spectral_contrast']])
+            feature = np.concatenate([feature, self.dataset[index]['features']['tonnetz']])
 
         feature = torch.from_numpy(feature.astype(np.float32)).unsqueeze(0)
 

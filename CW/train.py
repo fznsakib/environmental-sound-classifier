@@ -193,8 +193,13 @@ class CNN(nn.Module):
 
         ## First fully connected layer
         self.fc1 = nn.Linear(15488, 1024, bias=False) # 15488 = 11 * 22 * 64
+        
+        # Shape of tensor output from 4th layer will be different due to difference in
+        # input dimensions for MLMC. So number of input features to FC1 will be different.
+        if args.mode == 'MLMC':
+            self.fc1 = nn.Linear(26048, 1024, bias=False)
+  
         self.initialise_layer(self.fc1)
-        # self.batchNorm5 = nn.BatchNorm1d(1024)
 
         ## Second fully connected layer
         self.fc2 = nn.Linear(1024, 10, bias=False)
