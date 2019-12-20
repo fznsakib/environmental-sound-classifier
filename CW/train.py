@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from data.dataset import UrbanSound8KDataset
-from torchsummary import summary
+# from torchsummary import summary
 
 import argparse
 from pathlib import Path
@@ -115,7 +115,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.001)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
@@ -192,12 +192,12 @@ class CNN(nn.Module):
         self.batchNorm4 = nn.BatchNorm2d(64)
 
         ## First fully connected layer
-        self.fc1 = nn.Linear(15488, 1024) # 15488 = 11 * 22 * 64
+        self.fc1 = nn.Linear(15488, 1024, bias=False) # 15488 = 11 * 22 * 64
         self.initialise_layer(self.fc1)
         # self.batchNorm5 = nn.BatchNorm1d(1024)
 
         ## Second fully connected layer
-        self.fc2 = nn.Linear(1024, 10)
+        self.fc2 = nn.Linear(1024, 10, bias=False)
         self.initialise_layer(self.fc2)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
@@ -234,11 +234,12 @@ class CNN(nn.Module):
         x = self.dropout(x)
         x = self.fc1(x)
         # x = self.batchNorm5(x)
-        x = F.sigmoid(x)
+        x = torch.sigmoid(x)
 
         ## TASK 6-2: Pass x through the last fully connected layer
+        x = self.dropout(x)
         x = self.fc2(x)
-        x = F.softmax(x)
+        x = F.softmax(x, dim=1)
 
         return x
 
