@@ -239,9 +239,8 @@ class CNN(nn.Module):
         x = torch.sigmoid(x)
 
         ## TASK 6-2: Pass x through the last fully connected layer
-        x = self.dropout(x)
+        # x = self.dropout(x)
         x = self.fc2(x)
-        x = F.softmax(x, dim=1)
 
         return x
 
