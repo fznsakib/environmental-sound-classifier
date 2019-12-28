@@ -89,6 +89,10 @@ else:
 
 def main(args):
 
+    if (args.mode not in ['LMC', 'MC', 'MLMC']):
+        print('modes allowed: LMC, MC, MLMC')
+        exit()
+
     train_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_train.pkl", args.mode),
         batch_size=args.batch_size,
