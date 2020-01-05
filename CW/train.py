@@ -111,8 +111,6 @@ def main(args):
 
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
 
-    # summary(model, (1, 85, 41)) # To print out layer parameters
-
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
 
@@ -145,7 +143,7 @@ class CNN(nn.Module):
         super().__init__()
         self.input_shape = ImageShape(height=height, width=width, channels=channels)
         self.class_count = class_count
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout2d(dropout)
 
         # First convolutional layer
         self.conv1 = nn.Conv2d(
@@ -293,7 +291,7 @@ class Trainer:
             self.model.train()
             data_load_start_time = time.time()
 
-            for i, (batch, labels, filename) in enumerate(self.train_loader):
+            for i, (batch, labels, filenames) in enumerate(self.train_loader):
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
                 data_load_end_time = time.time()
@@ -364,7 +362,8 @@ class Trainer:
         )
 
     def validate(self):
-        results = {"preds": [], "labels": []}
+        # key = filename -> { label: x, preds = []}
+        results = {}
         total_loss = 0
 
         # Turn on evaluation mode for network. This changes the behaviour of
@@ -373,20 +372,32 @@ class Trainer:
 
         # No need to track gradients for validation, we're not optimizing.
         with torch.no_grad():
-            for i, (batch, labels, filename) in enumerate(self.test_loader):
+            for i, (batch, labels, filenames) in enumerate(self.test_loader):
                 batch = batch.to(self.device)
                 labels = labels.to(self.device)
                 logits = self.model(batch)
                 loss = self.criterion(logits, labels)
                 total_loss += loss.item()
                 preds = logits.argmax(dim=-1).cpu().numpy()
-                results["preds"].extend(list(preds))
-                results["labels"].extend(list(labels.cpu().numpy()))
 
-        accuracy = compute_accuracy(np.array(results["labels"]), np.array(results["preds"]))
+                # Populate dictionary with scores for each segment in this batch assigned to the filename
+                for j, filename in enumerate(filenames):
+                    current_logits = logits[j].cpu().tolist()
+                    if filename not in results:
+                        results[filename] = {
+                            "label" : labels[j],
+                            "logits" : [current_logits],
+                            "prediction"  : -1
+                        }
+                    else:
+                        results[filename]["logits"].append(current_logits)
+        
+        # Take the average across each class score for each file to get a prediction
+        results = compute_predictions(results)
+
+        accuracy = compute_file_accuracy(results)
+        per_class_accuracies = compute_file_per_class_accuracies(results)
         average_loss = total_loss / len(self.test_loader)
-
-        per_class_accuracies = compute_per_class_accuracies(np.array(results["labels"]), np.array(results["preds"]))
 
         self.summary_writer.add_scalars(
                 "accuracy",
@@ -402,6 +413,29 @@ class Trainer:
         print(f"per class accuracies: {per_class_accuracies}")
 
 
+def compute_predictions(results: dict) -> dict:
+
+    for filename in results:
+        # Convert list ot logits for this file to numpy array
+        results[filename]["logits"] = np.asarray(results[filename]["logits"])
+        
+        # Average scores across segments for each class
+        results[filename]["logits"] = np.mean(results[filename]["logits"], axis=0)
+        
+        # Get index of highest scoring class
+        results[filename]["prediction"] = results[filename]["logits"].argmax(-1)
+
+    return results
+
+
+def compute_file_accuracy(results : dict) -> float:
+    correct = 0
+    for filename in results:
+        if (results[filename]["label"] == results[filename]["prediction"]):
+            correct += 1
+    
+    return correct/len(results.keys())
+
 def compute_accuracy(
     labels: Union[torch.Tensor, np.ndarray], preds: Union[torch.Tensor, np.ndarray]
 ) -> float:
@@ -413,6 +447,27 @@ def compute_accuracy(
     assert len(labels) == len(preds)
     return float((labels == preds).sum()) / len(labels)
 
+
+def compute_file_per_class_accuracies(results : dict) -> float:
+
+    class_accuracies = {}
+
+    for filename in results:
+        label = results[filename]["label"].item()
+
+        if label not in class_accuracies.keys():
+            class_accuracies[label] = []
+        
+        if label == results[filename]["prediction"]:
+            class_accuracies[label].append(1)
+        else:
+            class_accuracies[label].append(0)
+
+    for label in class_accuracies:
+        accuracy_count = class_accuracies[label]
+        class_accuracies[label] = sum(accuracy_count)/len(accuracy_count)
+
+    return class_accuracies
 
 def compute_per_class_accuracies(labels: Union[torch.Tensor, np.ndarray], preds: Union[torch.Tensor, np.ndarray]) -> float:
 
