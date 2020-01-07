@@ -37,6 +37,23 @@ class UrbanSound8KDataset(data.Dataset):
             feature = np.concatenate([feature, self.dataset[index]['features']['spectral_contrast']])
             feature = np.concatenate([feature, self.dataset[index]['features']['tonnetz']])
 
+        ###### Printing out visual images ######
+        elif self.mode == 'MFCC':
+            feature = self.dataset[index]['features']['mfcc']
+
+        elif self.mode == 'LM':
+            feature = self.dataset[index]['features']['logmelspec']
+
+        elif self.mode == 'chroma':
+            feature = self.dataset[index]['features']['chroma']
+
+        elif self.mode == 'SC':
+            feature = self.dataset[index]['features']['spectral_contrast']
+
+        elif self.mode == 'TN':
+            feature = self.dataset[index]['features']['tonnetz']
+        ###### END ######
+
         feature = torch.from_numpy(feature.astype(np.float32)).unsqueeze(0)
 
         label = self.dataset[index]['classID']

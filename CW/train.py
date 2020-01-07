@@ -17,6 +17,8 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from data.dataset import UrbanSound8KDataset
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 # from torchsummary import summary
 
 import argparse
@@ -89,7 +91,7 @@ else:
 
 def main(args):
 
-    if (args.mode not in ['LMC', 'MC', 'MLMC']):
+    if (args.mode not in ['LMC', 'MC', 'MLMC', 'LM', 'MFCC', 'chroma', 'SC', 'TN']):
         print('modes allowed: LMC, MC, MLMC')
         exit()
 
@@ -108,6 +110,31 @@ def main(args):
         num_workers=args.worker_count,
         pin_memory=True,
     )
+    for i, (input, labels, filename) in enumerate(test_loader):
+        if i == 100:
+            img = input
+            print(input.shape)
+            img = img[16].data.numpy()
+            img = np.squeeze(img)
+            print(img)
+            if args.mode == 'LMC':
+                plt.imsave('lmc.png', img)
+            elif args.mode == 'MC':
+                plt.imsave('mc.png', img)
+            elif args.mode == 'MFCC':
+                plt.imsave('mfcc.png', img)
+            elif args.mode == 'LM':
+                plt.imsave('lm.png', img)
+            elif args.mode == 'chroma':
+                plt.imsave('chroma.png', img)
+            elif args.mode == 'SC':
+                plt.imsave('spectral_contrast.png', img)
+            elif args.mode == 'TN':
+                plt.imsave('tonnetz.png', img)
+            print(labels.shape)
+            print(filename)
+
+    exit()
 
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
 
@@ -193,12 +220,12 @@ class CNN(nn.Module):
 
         ## First fully connected layer
         self.fc1 = nn.Linear(15488, 1024, bias=False) # 15488 = 11 * 22 * 64
-        
+
         # Shape of tensor output from 4th layer will be different due to difference in
         # input dimensions for MLMC. So number of input features to FC1 will be different.
         if mode == 'MLMC':
             self.fc1 = nn.Linear(26048, 1024, bias=False)
-  
+
         self.initialise_layer(self.fc1)
 
         ## Second fully connected layer
@@ -391,7 +418,7 @@ class Trainer:
                         }
                     else:
                         results[filename]["logits"].append(current_logits)
-        
+
         # Take the average across each class score for each file to get a prediction
         results = compute_predictions(results)
 
@@ -418,10 +445,10 @@ def compute_predictions(results: dict) -> dict:
     for filename in results:
         # Convert list ot logits for this file to numpy array
         results[filename]["logits"] = np.asarray(results[filename]["logits"])
-        
+
         # Average scores across segments for each class
         results[filename]["logits"] = np.mean(results[filename]["logits"], axis=0)
-        
+
         # Get index of highest scoring class
         results[filename]["prediction"] = results[filename]["logits"].argmax(-1)
 
@@ -433,7 +460,7 @@ def compute_file_accuracy(results : dict) -> float:
     for filename in results:
         if (results[filename]["label"] == results[filename]["prediction"]):
             correct += 1
-    
+
     return correct/len(results.keys())
 
 def compute_accuracy(
@@ -457,7 +484,7 @@ def compute_file_per_class_accuracies(results : dict) -> float:
 
         if label not in class_accuracies.keys():
             class_accuracies[label] = []
-        
+
         if label == results[filename]["prediction"]:
             class_accuracies[label].append(1)
         else:
