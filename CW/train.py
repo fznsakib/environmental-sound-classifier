@@ -116,21 +116,25 @@ def main(args):
             print(input.shape)
             img = img[16].data.numpy()
             img = np.squeeze(img)
-            print(img)
+            # Resize
+            new_img = np.zeros(np.array(img.shape) * 10)
+            for j in range(img.shape[0]):
+                for k in range(img.shape[1]):
+                    new_img[j * 10: (j+1) * 10, k * 10: (k+1) * 10] = img[j, k]
             if args.mode == 'LMC':
-                plt.imsave('lmc.png', img)
+                plt.imsave('lmc.jpg', new_img, format='jpg')
             elif args.mode == 'MC':
-                plt.imsave('mc.png', img)
+                plt.imsave('mc.jpg', new_img, format='jpg')
             elif args.mode == 'MFCC':
-                plt.imsave('mfcc.png', img)
+                plt.imsave('mfcc.jpg', new_img, format='jpg')
             elif args.mode == 'LM':
-                plt.imsave('lm.png', img)
+                plt.imsave('lm.jpg', new_img, format='jpg')
             elif args.mode == 'chroma':
-                plt.imsave('chroma.png', img)
+                plt.imsave('chroma.jpg', new_img, format='jpg')
             elif args.mode == 'SC':
-                plt.imsave('spectral_contrast.png', img)
+                plt.imsave('spectral_contrast.jpg', new_img, format='jpg')
             elif args.mode == 'TN':
-                plt.imsave('tonnetz.png', img)
+                plt.imsave('tonnetz.jpg', new_img, format='jpg')
             print(labels.shape)
             print(filename)
 
