@@ -36,6 +36,10 @@ parser.add_argument("--learning-rate", default=0.001, type=float, help="Learning
 parser.add_argument("--sgd-momentum", default=0.9, type=float)
 parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--mode", default='LMC', type=str)
+parser.add_argument("--checkpoint-path", default=Path("models/LMC"), type=Path)
+parser.add_argument("--checkpoint-frequency", type=int, default=1, help="Save a checkpoint every N epochs")
+parser.add_argument("--resume-checkpoint", default=Path("models/LMC"), type=Path)
+parser.add_argument("--validate-only", default=False, type=bool)
 parser.add_argument(
     "--batch-size",
     default=32,
@@ -89,9 +93,17 @@ else:
 
 def main(args):
 
-    if (args.mode not in ['LMC', 'MC', 'MLMC']):
-        print('modes allowed: LMC, MC, MLMC')
+    if (args.mode not in ['LMC', 'MC', 'MLMC', 'TSCNN']):
+        print('modes allowed: LMC, MC, MLMC, TSCNN')
         exit()
+
+    # Set path of model depending on mode
+    if args.mode == 'MC':
+        args.checkpoint_path = Path("models/MC")
+        args.resume_checkpoint = Path("models/MC")
+    elif args.mode == 'MLMC':
+        args.checkpoint_path = Path("models/MLMC")
+        args.resume_checkpoint = Path("models/MLMC")
 
     train_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_train.pkl", args.mode),
@@ -110,12 +122,18 @@ def main(args):
     )
 
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+    if args.resume_checkpoint.exists():
+        checkpoint = torch.load(args.resume_checkpoint)
+        print(f"Resuming model {args.resume_checkpoint} that achieved {checkpoint['accuracy']}% accuracy")
+        model.load_state_dict(checkpoint['model'])
+    else:
+        print("New model initialised...")
 
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0005)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.005)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
@@ -125,7 +143,8 @@ def main(args):
     )
 
     trainer = Trainer(
-        model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
+        model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE,
+        args.checkpoint_frequency, args.checkpoint_path
     )
 
     trainer.train(
@@ -193,12 +212,12 @@ class CNN(nn.Module):
 
         ## First fully connected layer
         self.fc1 = nn.Linear(15488, 1024, bias=False) # 15488 = 11 * 22 * 64
-        
+
         # Shape of tensor output from 4th layer will be different due to difference in
         # input dimensions for MLMC. So number of input features to FC1 will be different.
         if mode == 'MLMC':
             self.fc1 = nn.Linear(26048, 1024, bias=False)
-  
+
         self.initialise_layer(self.fc1)
 
         ## Second fully connected layer
@@ -268,6 +287,8 @@ class Trainer:
         optimizer: Optimizer,
         summary_writer: SummaryWriter,
         device: torch.device,
+        checkpoint_frequency: int,
+        save_path: Path
     ):
         self.model = model.to(device)
         self.device = device
@@ -277,6 +298,8 @@ class Trainer:
         self.optimizer = optimizer
         self.summary_writer = summary_writer
         self.step = 0
+        self.checkpoint_frequency = checkpoint_frequency
+        self.save_path = save_path
 
     def train(
         self,
@@ -325,7 +348,10 @@ class Trainer:
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
-                self.validate()
+                validated_accuracy = self.validate()
+                # Save every args.checkpoint_frequency or if this is the last epoch
+                if (epoch + 1) % self.checkpoint_frequency or (epoch + 1) == epochs or epoch == 1:
+                    self.save_model(validated_accuracy)
                 # self.validate() will put the model in validation mode,
                 # so we have to switch back to train mode afterwards
                 self.model.train()
@@ -361,6 +387,14 @@ class Trainer:
                 "time/data", step_time, self.step
         )
 
+    def save_model(self, accuracy):
+        print(f"Saving model to {self.save_path}")
+        print("with accuracy of " + str(accuracy))
+        torch.save({
+        'model': self.model.state_dict(),
+        'accuracy': accuracy
+        }, self.save_path)
+
     def validate(self):
         # key = filename -> { label: x, preds = []}
         results = {}
@@ -391,7 +425,7 @@ class Trainer:
                         }
                     else:
                         results[filename]["logits"].append(current_logits)
-        
+
         # Take the average across each class score for each file to get a prediction
         results = compute_predictions(results)
 
@@ -409,19 +443,20 @@ class Trainer:
                 {"test": average_loss},
                 self.step
         )
-        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}")
+        accuracy_percentage = accuracy * 100
+        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
-
+        return accuracy_percentage
 
 def compute_predictions(results: dict) -> dict:
 
     for filename in results:
         # Convert list ot logits for this file to numpy array
         results[filename]["logits"] = np.asarray(results[filename]["logits"])
-        
+
         # Average scores across segments for each class
         results[filename]["logits"] = np.mean(results[filename]["logits"], axis=0)
-        
+
         # Get index of highest scoring class
         results[filename]["prediction"] = results[filename]["logits"].argmax(-1)
 
@@ -433,7 +468,7 @@ def compute_file_accuracy(results : dict) -> float:
     for filename in results:
         if (results[filename]["label"] == results[filename]["prediction"]):
             correct += 1
-    
+
     return correct/len(results.keys())
 
 def compute_accuracy(
@@ -457,7 +492,7 @@ def compute_file_per_class_accuracies(results : dict) -> float:
 
         if label not in class_accuracies.keys():
             class_accuracies[label] = []
-        
+
         if label == results[filename]["prediction"]:
             class_accuracies[label].append(1)
         else:
