@@ -396,7 +396,12 @@ class Trainer:
         results = compute_predictions(results)
 
         accuracy = compute_file_accuracy(results)
+
         per_class_accuracies = compute_file_per_class_accuracies(results)
+        per_class_accuracies = dict(sorted(per_class_accuracies.items()))
+
+        average_class_accuracy = sum(per_class_accuracies.values())/len(per_class_accuracies.keys())
+
         average_loss = total_loss / len(self.test_loader)
 
         self.summary_writer.add_scalars(
@@ -409,7 +414,7 @@ class Trainer:
                 {"test": average_loss},
                 self.step
         )
-        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}")
+        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
 
 
