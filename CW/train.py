@@ -36,6 +36,10 @@ parser.add_argument("--learning-rate", default=0.001, type=float, help="Learning
 parser.add_argument("--sgd-momentum", default=0.9, type=float)
 parser.add_argument("--dropout", default=0.5, type=float)
 parser.add_argument("--mode", default='LMC', type=str)
+parser.add_argument("--checkpoint-path", default=Path("models/LMC"), type=Path)
+parser.add_argument("--checkpoint-frequency", type=int, default=1, help="Save a checkpoint every N epochs")
+parser.add_argument("--resume-checkpoint", default=Path("models/LMC"), type=Path)
+parser.add_argument("--validate-only", default=False, type=bool)
 parser.add_argument(
     "--batch-size",
     default=32,
@@ -89,9 +93,29 @@ else:
 
 def main(args):
 
-    if (args.mode not in ['LMC', 'MC', 'MLMC']):
-        print('modes allowed: LMC, MC, MLMC')
+    if (args.mode not in ['LMC', 'MC', 'MLMC', 'TSCNN']):
+        print('modes allowed: LMC, MC, MLMC, TSCNN')
         exit()
+
+    # Set path of model depending on mode
+    if args.mode == 'MC':
+        args.checkpoint_path = Path("models/MC")
+        args.resume_checkpoint = Path("models/MC")
+    elif args.mode == 'MLMC':
+        args.checkpoint_path = Path("models/MLMC")
+        args.resume_checkpoint = Path("models/MLMC")
+    # In the case of TSCNN, ensure that LMCNet and MCNet has been trained and saved.
+    # Store the path of associated models
+    elif args.mode == 'TSCNN':
+        if not Path("models/MC").exists():
+            print("MCNet model is not available, please train it seperately first.")
+            exit()
+        elif not Path("models/LMC").exists():
+            print("LMCNet model is not available, please train it seperately first.")
+            exit()
+        else:
+            lmc_model_path = Path("models/LMC")
+            mc_model_path = Path("models/MC")
 
     train_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_train.pkl", args.mode),
@@ -110,12 +134,18 @@ def main(args):
     )
 
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+    if not args.mode == 'TSCNN' and args.resume_checkpoint.exists():
+        checkpoint = torch.load(args.resume_checkpoint)
+        print(f"Resuming model {args.resume_checkpoint} that achieved {checkpoint['accuracy']}% accuracy")
+        model.load_state_dict(checkpoint['model'])
+    else:
+        print("New model initialised...")
 
     ## TASK 8: Redefine the criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0005)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.005)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
@@ -124,16 +154,52 @@ def main(args):
             flush_secs=5
     )
 
-    trainer = Trainer(
-        model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE
-    )
+    # In TSCNN mode, load both LMCNet and MCNet, initialise TSCNN validator instead of generic trainer.
+    if args.mode == 'TSCNN':
+        # Init models
+        lmc_model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+        mc_model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+        # Load from checkpoint
+        lmc_checkpoint = torch.load(lmc_model_path)
+        mc_checkpoint = torch.load(mc_model_path)
+        print(f"Loading LMCNet that achieved {lmc_checkpoint['accuracy']}% accuracy")
+        lmc_model.load_state_dict(lmc_checkpoint['model'])
+        print(f"Loading MCNet that achieved {mc_checkpoint['accuracy']}% accuracy")
+        mc_model.load_state_dict(mc_checkpoint['model'])
+        # Init loaders for LMC and MC features
+        lmc_loader = torch.utils.data.DataLoader(
+            UrbanSound8KDataset("data/UrbanSound8K_test.pkl", 'LMC'),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.worker_count,
+            pin_memory=True,
+        )
+        mc_loader = torch.utils.data.DataLoader(
+            UrbanSound8KDataset("data/UrbanSound8K_test.pkl", 'MC'),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.worker_count,
+            pin_memory=True,
+        )
+        validator = TSCNN_Validator(
+            lmc_model, mc_model, lmc_loader, mc_loader, criterion, optimizer, summary_writer, DEVICE
+        )
 
-    trainer.train(
-        args.epochs,
-        args.val_frequency,
-        print_frequency=args.print_frequency,
-        log_frequency=args.log_frequency,
-    )
+        validator.validate()
+
+    # For other modes, load generic trainer.
+    else:
+        trainer = Trainer(
+            model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE,
+            args.checkpoint_frequency, args.checkpoint_path
+        )
+
+        trainer.train(
+            args.epochs,
+            args.val_frequency,
+            print_frequency=args.print_frequency,
+            log_frequency=args.log_frequency,
+        )
 
     summary_writer.close()
 
@@ -193,12 +259,12 @@ class CNN(nn.Module):
 
         ## First fully connected layer
         self.fc1 = nn.Linear(15488, 1024, bias=False) # 15488 = 11 * 22 * 64
-        
+
         # Shape of tensor output from 4th layer will be different due to difference in
         # input dimensions for MLMC. So number of input features to FC1 will be different.
         if mode == 'MLMC':
             self.fc1 = nn.Linear(26048, 1024, bias=False)
-  
+
         self.initialise_layer(self.fc1)
 
         ## Second fully connected layer
@@ -268,6 +334,8 @@ class Trainer:
         optimizer: Optimizer,
         summary_writer: SummaryWriter,
         device: torch.device,
+        checkpoint_frequency: int,
+        save_path: Path
     ):
         self.model = model.to(device)
         self.device = device
@@ -277,6 +345,8 @@ class Trainer:
         self.optimizer = optimizer
         self.summary_writer = summary_writer
         self.step = 0
+        self.checkpoint_frequency = checkpoint_frequency
+        self.save_path = save_path
 
     def train(
         self,
@@ -325,7 +395,10 @@ class Trainer:
 
             self.summary_writer.add_scalar("epoch", epoch, self.step)
             if ((epoch + 1) % val_frequency) == 0:
-                self.validate()
+                validated_accuracy = self.validate()
+                # Save every args.checkpoint_frequency or if this is the last epoch
+                if (epoch + 1) % self.checkpoint_frequency or (epoch + 1) == epochs or epoch == 1:
+                    self.save_model(validated_accuracy)
                 # self.validate() will put the model in validation mode,
                 # so we have to switch back to train mode afterwards
                 self.model.train()
@@ -361,6 +434,14 @@ class Trainer:
                 "time/data", step_time, self.step
         )
 
+    def save_model(self, accuracy):
+        print(f"Saving model to {self.save_path}")
+        print("with accuracy of " + str(accuracy))
+        torch.save({
+        'model': self.model.state_dict(),
+        'accuracy': accuracy
+        }, self.save_path)
+
     def validate(self):
         # key = filename -> { label: x, preds = []}
         results = {}
@@ -391,7 +472,7 @@ class Trainer:
                         }
                     else:
                         results[filename]["logits"].append(current_logits)
-        
+
         # Take the average across each class score for each file to get a prediction
         results = compute_predictions(results)
 
@@ -414,19 +495,157 @@ class Trainer:
                 {"test": average_loss},
                 self.step
         )
-        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
+              
+        accuracy_percentage = accuracy * 100
+        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
+        return accuracy_percentage
 
+class TSCNN_Validator:
+    def __init__(
+        self,
+        lmc_model: nn.Module,
+        mc_model: nn.Module,
+        lmc_loader: DataLoader,
+        mc_loader: DataLoader,
+        criterion: nn.Module,
+        optimizer: Optimizer,
+        summary_writer: SummaryWriter,
+        device: torch.device,
+    ):
+        self.lmc_model = lmc_model.to(device)
+        self.mc_model = mc_model.to(device)
+        self.device = device
+        self.lmc_loader = lmc_loader
+        self.mc_loader = mc_loader
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.summary_writer = summary_writer
+        self.step = 0
+
+    def print_metrics(self, epoch, accuracy, loss, data_load_time, step_time):
+        epoch_step = self.step % len(self.train_loader)
+        print(
+                f"epoch: [{epoch}], "
+                f"step: [{epoch_step}/{len(self.train_loader)}], "
+                f"batch loss: {loss:.5f}, "
+                f"batch accuracy: {accuracy * 100:2.2f}, "
+                f"data load time: "
+                f"{data_load_time:.5f}, "
+                f"step time: {step_time:.5f}"
+        )
+
+    def log_metrics(self, epoch, accuracy, loss, data_load_time, step_time):
+        self.summary_writer.add_scalar("epoch", epoch, self.step)
+        self.summary_writer.add_scalars(
+                "accuracy",
+                {"train": accuracy},
+                self.step
+        )
+        self.summary_writer.add_scalars(
+                "loss",
+                {"train": float(loss.item())},
+                self.step
+        )
+        self.summary_writer.add_scalar(
+                "time/data", data_load_time, self.step
+        )
+        self.summary_writer.add_scalar(
+                "time/data", step_time, self.step
+        )
+
+    def validate(self):
+        # key = filename -> { label: x, preds = []}
+        results = {}
+        lmc_results = {}
+        mc_results = {}
+        total_loss = 0
+
+        # Turn on evaluation mode for network. This changes the behaviour of
+        # dropout and batch normalisation during validation.
+        self.lmc_model.eval()
+        self.mc_model.eval()
+
+        # No need to track gradients for validation, we're not optimizing.
+        with torch.no_grad():
+            for i, (batch, labels, filenames) in enumerate(self.lmc_loader):
+                batch = batch.to(self.device)
+                labels = labels.to(self.device)
+                logits = self.lmc_model(batch)
+                loss = self.criterion(logits, labels)
+                total_loss += loss.item()
+                preds = logits.argmax(dim=-1).cpu().numpy()
+
+                # Populate dictionary with scores for each segment in this batch assigned to the filename
+                for j, filename in enumerate(filenames):
+                    current_logits = logits[j].cpu().tolist()
+                    if filename not in lmc_results:
+                        lmc_results[filename] = {
+                            "label" : labels[j],
+                            "logits" : [current_logits],
+                            "prediction"  : -1
+                        }
+                    else:
+                        lmc_results[filename]["logits"].append(current_logits)
+
+        with torch.no_grad():
+            for i, (batch, labels, filenames) in enumerate(self.mc_loader):
+                batch = batch.to(self.device)
+                labels = labels.to(self.device)
+                logits = self.mc_model(batch)
+                loss = self.criterion(logits, labels)
+                total_loss += loss.item()
+                preds = logits.argmax(dim=-1).cpu().numpy()
+
+                # Populate dictionary with scores for each segment in this batch assigned to the filename
+                for j, filename in enumerate(filenames):
+                    current_logits = logits[j].cpu().tolist()
+                    if filename not in mc_results:
+                        mc_results[filename] = {
+                            "label" : labels[j],
+                            "logits" : [current_logits],
+                            "prediction"  : -1
+                        }
+                    else:
+                        mc_results[filename]["logits"].append(current_logits)
+
+        results = lmc_results
+        for filename in lmc_results.keys():
+            for i in range (0, len(lmc_results[filename]["logits"])):
+                for j in range(0, len(lmc_results[filename]["logits"][i])):
+                    results[filename]["logits"][i][j] = (lmc_results[filename]["logits"][i][j] + mc_results[filename]["logits"][i][j])/2
+
+        # Take the average across each class score for each file to get a prediction
+        results = compute_predictions(results)
+
+        accuracy = compute_file_accuracy(results)
+        per_class_accuracies = compute_file_per_class_accuracies(results)
+        average_loss = total_loss / len(self.lmc_loader)
+
+        self.summary_writer.add_scalars(
+                "accuracy",
+                {"test": accuracy},
+                self.step
+        )
+        self.summary_writer.add_scalars(
+                "loss",
+                {"test": average_loss},
+                self.step
+        )
+        accuracy_percentage = accuracy * 100
+        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}")
+        print(f"per class accuracies: {per_class_accuracies}")
+        return accuracy_percentage
 
 def compute_predictions(results: dict) -> dict:
 
     for filename in results:
         # Convert list ot logits for this file to numpy array
         results[filename]["logits"] = np.asarray(results[filename]["logits"])
-        
+
         # Average scores across segments for each class
         results[filename]["logits"] = np.mean(results[filename]["logits"], axis=0)
-        
+
         # Get index of highest scoring class
         results[filename]["prediction"] = results[filename]["logits"].argmax(-1)
 
@@ -438,7 +657,7 @@ def compute_file_accuracy(results : dict) -> float:
     for filename in results:
         if (results[filename]["label"] == results[filename]["prediction"]):
             correct += 1
-    
+
     return correct/len(results.keys())
 
 def compute_accuracy(
@@ -462,7 +681,7 @@ def compute_file_per_class_accuracies(results : dict) -> float:
 
         if label not in class_accuracies.keys():
             class_accuracies[label] = []
-        
+
         if label == results[filename]["prediction"]:
             class_accuracies[label].append(1)
         else:
