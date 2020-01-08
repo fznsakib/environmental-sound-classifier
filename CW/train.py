@@ -104,6 +104,18 @@ def main(args):
     elif args.mode == 'MLMC':
         args.checkpoint_path = Path("models/MLMC")
         args.resume_checkpoint = Path("models/MLMC")
+    # In the case of TSCNN, ensure that LMCNet and MCNet has been trained and saved.
+    # Store the path of associated models
+    elif args.mode == 'TSCNN':
+        if not Path("models/MC").exists():
+            print("MCNet model is not available, please train it seperately first.")
+            exit()
+        elif not Path("models/LMC").exists():
+            print("LMCNet model is not available, please train it seperately first.")
+            exit()
+        else:
+            lmc_model_path = Path("models/LMC")
+            mc_model_path = Path("models/MC")
 
     train_loader = torch.utils.data.DataLoader(
         UrbanSound8KDataset("data/UrbanSound8K_train.pkl", args.mode),
@@ -122,7 +134,7 @@ def main(args):
     )
 
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
-    if args.resume_checkpoint.exists():
+    if not args.mode == 'TSCNN' and args.resume_checkpoint.exists():
         checkpoint = torch.load(args.resume_checkpoint)
         print(f"Resuming model {args.resume_checkpoint} that achieved {checkpoint['accuracy']}% accuracy")
         model.load_state_dict(checkpoint['model'])
@@ -142,17 +154,52 @@ def main(args):
             flush_secs=5
     )
 
-    trainer = Trainer(
-        model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE,
-        args.checkpoint_frequency, args.checkpoint_path
-    )
+    # In TSCNN mode, load both LMCNet and MCNet, initialise TSCNN validator instead of generic trainer.
+    if args.mode == 'TSCNN':
+        # Init models
+        lmc_model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+        mc_model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+        # Load from checkpoint
+        lmc_checkpoint = torch.load(lmc_model_path)
+        mc_checkpoint = torch.load(mc_model_path)
+        print(f"Loading LMCNet that achieved {lmc_checkpoint['accuracy']}% accuracy")
+        lmc_model.load_state_dict(lmc_checkpoint['model'])
+        print(f"Loading MCNet that achieved {mc_checkpoint['accuracy']}% accuracy")
+        mc_model.load_state_dict(mc_checkpoint['model'])
+        # Init loaders for LMC and MC features
+        lmc_loader = torch.utils.data.DataLoader(
+            UrbanSound8KDataset("data/UrbanSound8K_test.pkl", 'LMC'),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.worker_count,
+            pin_memory=True,
+        )
+        mc_loader = torch.utils.data.DataLoader(
+            UrbanSound8KDataset("data/UrbanSound8K_test.pkl", 'MC'),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.worker_count,
+            pin_memory=True,
+        )
+        validator = TSCNN_Validator(
+            lmc_model, mc_model, lmc_loader, mc_loader, criterion, optimizer, summary_writer, DEVICE
+        )
 
-    trainer.train(
-        args.epochs,
-        args.val_frequency,
-        print_frequency=args.print_frequency,
-        log_frequency=args.log_frequency,
-    )
+        validator.validate()
+
+    # For other modes, load generic trainer.
+    else:
+        trainer = Trainer(
+            model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE,
+            args.checkpoint_frequency, args.checkpoint_path
+        )
+
+        trainer.train(
+            args.epochs,
+            args.val_frequency,
+            print_frequency=args.print_frequency,
+            log_frequency=args.log_frequency,
+        )
 
     summary_writer.close()
 
@@ -432,6 +479,142 @@ class Trainer:
         accuracy = compute_file_accuracy(results)
         per_class_accuracies = compute_file_per_class_accuracies(results)
         average_loss = total_loss / len(self.test_loader)
+
+        self.summary_writer.add_scalars(
+                "accuracy",
+                {"test": accuracy},
+                self.step
+        )
+        self.summary_writer.add_scalars(
+                "loss",
+                {"test": average_loss},
+                self.step
+        )
+        accuracy_percentage = accuracy * 100
+        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}")
+        print(f"per class accuracies: {per_class_accuracies}")
+        return accuracy_percentage
+
+class TSCNN_Validator:
+    def __init__(
+        self,
+        lmc_model: nn.Module,
+        mc_model: nn.Module,
+        lmc_loader: DataLoader,
+        mc_loader: DataLoader,
+        criterion: nn.Module,
+        optimizer: Optimizer,
+        summary_writer: SummaryWriter,
+        device: torch.device,
+    ):
+        self.lmc_model = lmc_model.to(device)
+        self.mc_model = mc_model.to(device)
+        self.device = device
+        self.lmc_loader = lmc_loader
+        self.mc_loader = mc_loader
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.summary_writer = summary_writer
+        self.step = 0
+
+    def print_metrics(self, epoch, accuracy, loss, data_load_time, step_time):
+        epoch_step = self.step % len(self.train_loader)
+        print(
+                f"epoch: [{epoch}], "
+                f"step: [{epoch_step}/{len(self.train_loader)}], "
+                f"batch loss: {loss:.5f}, "
+                f"batch accuracy: {accuracy * 100:2.2f}, "
+                f"data load time: "
+                f"{data_load_time:.5f}, "
+                f"step time: {step_time:.5f}"
+        )
+
+    def log_metrics(self, epoch, accuracy, loss, data_load_time, step_time):
+        self.summary_writer.add_scalar("epoch", epoch, self.step)
+        self.summary_writer.add_scalars(
+                "accuracy",
+                {"train": accuracy},
+                self.step
+        )
+        self.summary_writer.add_scalars(
+                "loss",
+                {"train": float(loss.item())},
+                self.step
+        )
+        self.summary_writer.add_scalar(
+                "time/data", data_load_time, self.step
+        )
+        self.summary_writer.add_scalar(
+                "time/data", step_time, self.step
+        )
+
+    def validate(self):
+        # key = filename -> { label: x, preds = []}
+        results = {}
+        lmc_results = {}
+        mc_results = {}
+        total_loss = 0
+
+        # Turn on evaluation mode for network. This changes the behaviour of
+        # dropout and batch normalisation during validation.
+        self.lmc_model.eval()
+        self.mc_model.eval()
+
+        # No need to track gradients for validation, we're not optimizing.
+        with torch.no_grad():
+            for i, (batch, labels, filenames) in enumerate(self.lmc_loader):
+                batch = batch.to(self.device)
+                labels = labels.to(self.device)
+                logits = self.lmc_model(batch)
+                loss = self.criterion(logits, labels)
+                total_loss += loss.item()
+                preds = logits.argmax(dim=-1).cpu().numpy()
+
+                # Populate dictionary with scores for each segment in this batch assigned to the filename
+                for j, filename in enumerate(filenames):
+                    current_logits = logits[j].cpu().tolist()
+                    if filename not in lmc_results:
+                        lmc_results[filename] = {
+                            "label" : labels[j],
+                            "logits" : [current_logits],
+                            "prediction"  : -1
+                        }
+                    else:
+                        lmc_results[filename]["logits"].append(current_logits)
+
+        with torch.no_grad():
+            for i, (batch, labels, filenames) in enumerate(self.mc_loader):
+                batch = batch.to(self.device)
+                labels = labels.to(self.device)
+                logits = self.mc_model(batch)
+                loss = self.criterion(logits, labels)
+                total_loss += loss.item()
+                preds = logits.argmax(dim=-1).cpu().numpy()
+
+                # Populate dictionary with scores for each segment in this batch assigned to the filename
+                for j, filename in enumerate(filenames):
+                    current_logits = logits[j].cpu().tolist()
+                    if filename not in mc_results:
+                        mc_results[filename] = {
+                            "label" : labels[j],
+                            "logits" : [current_logits],
+                            "prediction"  : -1
+                        }
+                    else:
+                        mc_results[filename]["logits"].append(current_logits)
+
+        results = lmc_results
+        for filename in lmc_results.keys():
+            for i in range (0, len(lmc_results[filename]["logits"])):
+                for j in range(0, len(lmc_results[filename]["logits"][i])):
+                    results[filename]["logits"][i][j] = (lmc_results[filename]["logits"][i][j] + mc_results[filename]["logits"][i][j])/2
+
+        # Take the average across each class score for each file to get a prediction
+        results = compute_predictions(results)
+
+        accuracy = compute_file_accuracy(results)
+        per_class_accuracies = compute_file_per_class_accuracies(results)
+        average_loss = total_loss / len(self.lmc_loader)
 
         self.summary_writer.add_scalars(
                 "accuracy",
