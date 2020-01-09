@@ -487,7 +487,7 @@ class Trainer:
 
         self.summary_writer.add_scalars(
                 "accuracy",
-                {"test": accuracy},
+                {"test": average_class_accuracy},
                 self.step
         )
         self.summary_writer.add_scalars(
@@ -499,7 +499,7 @@ class Trainer:
         accuracy_percentage = accuracy * 100
         print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
-        return accuracy_percentage
+        return average_class_accuracy
 
 class TSCNN_Validator:
     def __init__(
@@ -620,11 +620,14 @@ class TSCNN_Validator:
 
         accuracy = compute_file_accuracy(results)
         per_class_accuracies = compute_file_per_class_accuracies(results)
+        per_class_accuracies = dict(sorted(per_class_accuracies.items()))
+
+        average_class_accuracy = sum(per_class_accuracies.values())/len(per_class_accuracies.keys())
         average_loss = total_loss / len(self.lmc_loader)
 
         self.summary_writer.add_scalars(
                 "accuracy",
-                {"test": accuracy},
+                {"test": average_class_accuracy},
                 self.step
         )
         self.summary_writer.add_scalars(
@@ -635,7 +638,7 @@ class TSCNN_Validator:
         accuracy_percentage = accuracy * 100
         print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
-        return accuracy_percentage
+        return average_class_accuracy
 
 def compute_predictions(results: dict) -> dict:
 
