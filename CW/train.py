@@ -107,7 +107,7 @@ def main(args):
         exit()
 
     # Set path of model depending on mode
-    initialise_checkpoint_path(args.mode)
+    initialise_checkpoint_path(args)
 
     # Initialise convolutional neural network with input
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
@@ -315,7 +315,7 @@ class CNN(nn.Module):
         x = F.relu(x)
 
         # Flatten the output of the pooling layer so it is of shape
-        # (32, 1024), ready for fc1 to take in as input.
+        # (32, 15488), ready for fc1 to take in as input.
         x = torch.flatten(x, start_dim=1, end_dim=3)
 
         # First fully connected layer pass, followed by sigmoid activation
@@ -786,16 +786,16 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
 OTHER FUNCTIONS
 '''''''''''''''''''''''''''''''''''''''''''''
 
-def initialise_checkpoint_path(mode):
-    if mode == 'MC':
+def initialise_checkpoint_path(args):
+    if args.mode == 'MC':
         args.checkpoint_path = Path("models/MC")
         args.resume_checkpoint = Path("models/MC")
-    elif mode == 'MLMC':
+    elif args.mode == 'MLMC':
         args.checkpoint_path = Path("models/MLMC")
         args.resume_checkpoint = Path("models/MLMC")
     # In the case of TSCNN, ensure that LMCNet and MCNet has been trained and saved.
     # Store the path of associated models.
-    elif mode == 'TSCNN':
+    elif args.mode == 'TSCNN':
         if not Path("models/MC").exists():
             print("MCNet model is not available, please train it seperately first.")
             exit()
