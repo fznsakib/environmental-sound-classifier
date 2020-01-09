@@ -110,8 +110,11 @@ def main(args):
     initialise_checkpoint_path(args.mode)
 
     # Initialise convolutional neural network with input
-    # TODO: Add height and width for MLMC
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+
+    # MLMC input has different size for update CNN accordingly
+    if args.mode == 'MLMC':
+        model = CNN(height=145, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
 
     # Define loss criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
