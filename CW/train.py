@@ -107,7 +107,24 @@ def main(args):
         exit()
 
     # Set path of model depending on mode
-    initialise_checkpoint_path(args)
+    if args.mode == 'MC':
+        args.checkpoint_path = Path("models/MC")
+        args.resume_checkpoint = Path("models/MC")
+    elif args.mode == 'MLMC':
+        args.checkpoint_path = Path("models/MLMC")
+        args.resume_checkpoint = Path("models/MLMC")
+    # In the case of TSCNN, ensure that LMCNet and MCNet has been trained and saved.
+    # Store the path of associated models.
+    elif args.mode == 'TSCNN':
+        if not Path("models/MC").exists():
+            print("MCNet model is not available, please train it seperately first.")
+            exit()
+        elif not Path("models/LMC").exists():
+            print("LMCNet model is not available, please train it seperately first.")
+            exit()
+        else:
+            lmc_model_path = Path("models/LMC")
+            mc_model_path = Path("models/MC")
 
     # Initialise convolutional neural network with input
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
@@ -215,7 +232,7 @@ class CNN(nn.Module):
         super().__init__()
         self.input_shape = ImageShape(height=height, width=width, channels=channels)
         self.class_count = class_count
-        self.dropout = nn.Dropout2d(dropout)
+        self.dropout = nn.Dropout(dropout)
 
         # First convolutional layer
         self.conv1 = nn.Conv2d(
@@ -786,25 +803,6 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
 OTHER FUNCTIONS
 '''''''''''''''''''''''''''''''''''''''''''''
 
-def initialise_checkpoint_path(args):
-    if args.mode == 'MC':
-        args.checkpoint_path = Path("models/MC")
-        args.resume_checkpoint = Path("models/MC")
-    elif args.mode == 'MLMC':
-        args.checkpoint_path = Path("models/MLMC")
-        args.resume_checkpoint = Path("models/MLMC")
-    # In the case of TSCNN, ensure that LMCNet and MCNet has been trained and saved.
-    # Store the path of associated models.
-    elif args.mode == 'TSCNN':
-        if not Path("models/MC").exists():
-            print("MCNet model is not available, please train it seperately first.")
-            exit()
-        elif not Path("models/LMC").exists():
-            print("LMCNet model is not available, please train it seperately first.")
-            exit()
-        else:
-            lmc_model_path = Path("models/LMC")
-            mc_model_path = Path("models/MC")
 
 if __name__ == "__main__":
     main(parser.parse_args())
