@@ -2,7 +2,7 @@
 
 #SBATCH --partition gpu
 #SBATCH --gres gpu:1
-#SBATCH --time 0-02:00
+#SBATCH --time 0-00:30
 #SBATCH --mem=64GB
 
 # Print some information about the job
@@ -10,10 +10,12 @@ echo "Running on host $(hostname)"
 echo "Time is $(date)"
 echo "Directory is $(pwd)"
 echo "Slurm job ID is $SLURM_JOB_ID"
+echo "Number of visible devices = $CUDA_VISIBLE_DEVICES"
 echo
 echo "This job runs on the following machines:"
 echo "$SLURM_JOB_NODELIST" | uniq
 echo
 
 # Run the Python script
-srun python train.py
+srun nvidia-smi
+srun python train.py --mode LMC
