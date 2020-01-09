@@ -145,7 +145,7 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
 
     ## TASK 11: Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.005)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0005)
 
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
