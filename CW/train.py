@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
+'''''''''''''''''''''''''''''''''''''''''''''
+IMPORTS
+'''''''''''''''''''''''''''''''''''''''''''''
 import time
 from multiprocessing import cpu_count
 from typing import Union, NamedTuple
-
 import sys
 import os
 import torch
+import argparse
 import torch.backends.cudnn
 import numpy as np
+from pathlib import Path
 from torch import nn, optim
 from torch.nn import functional as F
 import torchvision.datasets
@@ -17,15 +21,16 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from data.dataset import UrbanSound8KDataset
-# from torchsummary import summary
 
-import argparse
-from pathlib import Path
 
 torch.backends.cudnn.benchmark = True
 
+'''''''''''''''''''''''''''''''''''''''''''''
+ARGUMENT PARSER
+'''''''''''''''''''''''''''''''''''''''''''''
+
 parser = argparse.ArgumentParser(
-    description="Train a simple CNN on CIFAR-10",
+    description="Train an Environmental Sound classifying CNN using the UrbanSound8K dataset.",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
 
@@ -33,9 +38,10 @@ default_dataset_dir = os.getcwd() + '/data/'
 parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=0.001, type=float, help="Learning rate")
-parser.add_argument("--sgd-momentum", default=0.9, type=float)
-parser.add_argument("--dropout", default=0.5, type=float)
-parser.add_argument("--mode", default='LMC', type=str)
+parser.add_argument("--sgd-momentum", default=0.9, type=float, help="SGD momentum")
+parser.add_argument("--dropout", default=0.5, type=float, help="Dropout probability")
+parser.add_argument("--weight-decay", default=0.0005, type=float, help="Weight decay for optimiser")
+parser.add_argument("--mode", default='LMC', type=str, help="Input type")
 parser.add_argument("--checkpoint-path", default=Path("models/LMC"), type=Path)
 parser.add_argument("--checkpoint-frequency", type=int, default=1, help="Save a checkpoint every N epochs")
 parser.add_argument("--resume-checkpoint", default=Path("models/LMC"), type=Path)
@@ -78,77 +84,50 @@ parser.add_argument(
     help="Number of worker processes used to load data.",
 )
 
-
 class ImageShape(NamedTuple):
     height: int
     width: int
     channels: int
 
-
+# Check if GPU available, and use if so. Otherwise, use CPU
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
 else:
     DEVICE = torch.device("cpu")
 
 
+'''''''''''''''''''''''''''''''''''''''''''''
+MAIN
+'''''''''''''''''''''''''''''''''''''''''''''
 def main(args):
 
+    # Validate input mode argument
     if (args.mode not in ['LMC', 'MC', 'MLMC', 'TSCNN']):
-        print('modes allowed: LMC, MC, MLMC, TSCNN')
+        print('Incorrect mode given. Modes allowed: LMC, MC, MLMC, TSCNN')
         exit()
 
     # Set path of model depending on mode
-    if args.mode == 'MC':
-        args.checkpoint_path = Path("models/MC")
-        args.resume_checkpoint = Path("models/MC")
-    elif args.mode == 'MLMC':
-        args.checkpoint_path = Path("models/MLMC")
-        args.resume_checkpoint = Path("models/MLMC")
-    # In the case of TSCNN, ensure that LMCNet and MCNet has been trained and saved.
-    # Store the path of associated models
-    elif args.mode == 'TSCNN':
-        if not Path("models/MC").exists():
-            print("MCNet model is not available, please train it seperately first.")
-            exit()
-        elif not Path("models/LMC").exists():
-            print("LMCNet model is not available, please train it seperately first.")
-            exit()
-        else:
-            lmc_model_path = Path("models/LMC")
-            mc_model_path = Path("models/MC")
+    initialise_checkpoint_path(args.mode)
 
-    train_loader = torch.utils.data.DataLoader(
-        UrbanSound8KDataset("data/UrbanSound8K_train.pkl", args.mode),
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.worker_count,
-        pin_memory=True,
-    )
-
-    test_loader = torch.utils.data.DataLoader(
-        UrbanSound8KDataset("data/UrbanSound8K_test.pkl", args.mode),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.worker_count,
-        pin_memory=True,
-    )
-
+    # Initialise convolutional neural network with input
+    # TODO: Add height and width for MLMC
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
-    # summary(model, (1, 85, 41))
-    # exit()
+
+    # Define loss criterion to be softmax cross entropy
+    criterion = nn.CrossEntropyLoss()
+
+    # Define the Adam optimiser with the required parameters. Weight decay refers to L2 regularisation.
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+
+    # If a model exists for the requested mode, use it
     if not args.mode == 'TSCNN' and args.resume_checkpoint.exists():
         checkpoint = torch.load(args.resume_checkpoint)
-        print(f"Resuming model {args.resume_checkpoint} that achieved {checkpoint['accuracy']}% accuracy")
+        print(f"Resuming model {args.resume_checkpoint} that achieved {checkpoint['accuracy']*100:2.2f}% accuracy")
         model.load_state_dict(checkpoint['model'])
     else:
         print("New model initialised...")
 
-    ## TASK 8: Redefine the criterion to be softmax cross entropy
-    criterion = nn.CrossEntropyLoss()
-
-    ## TASK 11: Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0005)
-
+    # Initialise log writing
     log_dir = get_summary_writer_log_dir(args)
     print(f"Writing logs to {log_dir}")
     summary_writer = SummaryWriter(
@@ -156,19 +135,53 @@ def main(args):
             flush_secs=5
     )
 
-    # In TSCNN mode, load both LMCNet and MCNet, initialise TSCNN validator instead of generic trainer.
-    if args.mode == 'TSCNN':
-        # Init models
+    # For LMCNet, MCNet and MLMCNet, load generic trainer
+    if args.mode in ['LMC', 'MC', 'MLMC']:
+        # Load train and test datasets according to the input mode (LMC/MC/MLMC) requested
+        train_loader = torch.utils.data.DataLoader(
+            UrbanSound8KDataset("data/UrbanSound8K_train.pkl", args.mode),
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.worker_count,
+            pin_memory=True,
+        )
+
+        test_loader = torch.utils.data.DataLoader(
+            UrbanSound8KDataset("data/UrbanSound8K_test.pkl", args.mode),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.worker_count,
+            pin_memory=True,
+        )
+
+        trainer = Trainer(
+            model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE,
+            args.checkpoint_frequency, args.checkpoint_path
+        )
+
+        trainer.train(
+            args.epochs,
+            args.val_frequency,
+            print_frequency=args.print_frequency,
+            log_frequency=args.log_frequency,
+        )
+    # In TSCNN mode, load both LMCNet and MCNet. Initialise TSCNN validator instead of generic trainer.
+    elif args.mode == 'TSCNN':
+        # Initialise models
         lmc_model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
         mc_model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
-        # Load from checkpoint
+
+        # Load models from checkpoint
         lmc_checkpoint = torch.load(lmc_model_path)
         mc_checkpoint = torch.load(mc_model_path)
-        print(f"Loading LMCNet that achieved {lmc_checkpoint['accuracy']}% accuracy")
+
+        print(f"Loading LMCNet that achieved {lmc_checkpoint['accuracy']*100:2.2f}% accuracy")
         lmc_model.load_state_dict(lmc_checkpoint['model'])
-        print(f"Loading MCNet that achieved {mc_checkpoint['accuracy']}% accuracy")
+
+        print(f"Loading MCNet that achieved {mc_checkpoint['accuracy']*100:2.2f}% accuracy")
         mc_model.load_state_dict(mc_checkpoint['model'])
-        # Init loaders for LMC and MC features
+
+        # Initialise test data loaders for LMC and MC features
         lmc_loader = torch.utils.data.DataLoader(
             UrbanSound8KDataset("data/UrbanSound8K_test.pkl", 'LMC'),
             batch_size=args.batch_size,
@@ -189,22 +202,11 @@ def main(args):
 
         validator.validate()
 
-    # For other modes, load generic trainer.
-    else:
-        trainer = Trainer(
-            model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE,
-            args.checkpoint_frequency, args.checkpoint_path
-        )
-
-        trainer.train(
-            args.epochs,
-            args.val_frequency,
-            print_frequency=args.print_frequency,
-            log_frequency=args.log_frequency,
-        )
-
     summary_writer.close()
 
+'''''''''''''''''''''''''''''''''''''''''''''
+CNN DEFINITION
+'''''''''''''''''''''''''''''''''''''''''''''
 class CNN(nn.Module):
     def __init__(self, height: int, width: int, channels: int, mode: str, class_count: int, dropout: float):
         super().__init__()
@@ -214,7 +216,7 @@ class CNN(nn.Module):
 
         # First convolutional layer
         self.conv1 = nn.Conv2d(
-            in_channels=self.input_shape.channels, # Checkout input channel count
+            in_channels=self.input_shape.channels,
             out_channels=32,
             kernel_size=(3, 3),
             stride=(2, 2),
@@ -235,6 +237,9 @@ class CNN(nn.Module):
         )
         self.initialise_layer(self.conv2)
         self.batchNorm2 = nn.BatchNorm2d(32)
+
+        # Max-pool of [2 x 2] - ceil_mode is True so that dimensions are rounded to ceiling
+        # to obtain size of [21 x 43] as seen in Su et al's paper.
         self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         # Third convolutional layer
@@ -261,8 +266,10 @@ class CNN(nn.Module):
         self.initialise_layer(self.conv4)
         self.batchNorm4 = nn.BatchNorm2d(64)
 
-        ## First fully connected layer
-        self.fc1 = nn.Linear(15488, 1024, bias=False) # 15488 = 11 * 22 * 64
+        # First fully connected layer
+        # Input is the size of the output from conv4 multiplied by the 64 channels
+        # 11 * 22 * 64 = 15488
+        self.fc1 = nn.Linear(15488, 1024, bias=False)
 
         # Shape of tensor output from 4th layer will be different due to difference in
         # input dimensions for MLMC. So number of input features to FC1 will be different.
@@ -271,19 +278,22 @@ class CNN(nn.Module):
 
         self.initialise_layer(self.fc1)
 
-        ## Second fully connected layer
+        ## Second and final fully connected layer
         self.fc2 = nn.Linear(1024, 10, bias=False)
         self.initialise_layer(self.fc2)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
+        # Each convolutional layer pass is followed by batch normalisation,
+        # then the ReLU activation function. conv2 and conv4 have dropout applied
+        # to their input.
+
         # First convolutional layer pass
         x = self.conv1(images)
         x = self.batchNorm1(x)
         x = F.relu(x)
 
         # Second convolutional layer pass
-        # Dropout must be applied to layer and stored, instead of
-        # passing as input to next convolutional layer
+        # Max-pool applied at the end of it
         x = self.dropout(x)
         x = self.conv2(x)
         x = self.batchNorm2(x)
@@ -301,33 +311,31 @@ class CNN(nn.Module):
         x = self.batchNorm4(x)
         x = F.relu(x)
 
-        ## TASK 4: Flatten the output of the pooling layer so it is of shape
-        ## (batch_size, 4096)
+        # Flatten the output of the pooling layer so it is of shape
+        # (32, 1024), ready for fc1 to take in as input.
         x = torch.flatten(x, start_dim=1, end_dim=3)
 
-        # First fully connected layer pass
+        # First fully connected layer pass, followed by sigmoid activation
+        # function. Includes dropout to input.
         x = self.dropout(x)
         x = self.fc1(x)
         x = torch.sigmoid(x)
 
-        ## TASK 6-2: Pass x through the last fully connected layer
-        # x = self.dropout(x)
+        # Second fully connected layer pass.
         x = self.fc2(x)
 
         return x
 
     @staticmethod
     def initialise_layer(layer):
-        # print(layer.bias)
-        # if layer.bias == None:
-        #     print("YESSSSS")
-        # elif hasattr(layer, "bias"):
         if not (layer.bias is None):
             nn.init.zeros_(layer.bias)
         if hasattr(layer, "weight"):
             nn.init.kaiming_normal_(layer.weight)
 
-
+'''''''''''''''''''''''''''''''''''''''''''''
+TRAINER/VALIDATOR DEFINITIONS
+'''''''''''''''''''''''''''''''''''''''''''''
 class Trainer:
     def __init__(
         self,
@@ -360,7 +368,10 @@ class Trainer:
         log_frequency: int = 5,
         start_epoch: int = 0
     ):
+        # Activate training mode
         self.model.train()
+
+        # Train for requested number of epochs
         for epoch in range(start_epoch, epochs):
             self.model.train()
             data_load_start_time = time.time()
@@ -383,6 +394,7 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
+                # Compute segment-level accuracy
                 with torch.no_grad():
                     preds = logits.argmax(-1)
                     accuracy = compute_accuracy(labels, preds)
@@ -403,6 +415,7 @@ class Trainer:
                 # Save every args.checkpoint_frequency or if this is the last epoch
                 if (epoch + 1) % self.checkpoint_frequency or (epoch + 1) == epochs or epoch == 1:
                     self.save_model(validated_accuracy)
+
                 # self.validate() will put the model in validation mode,
                 # so we have to switch back to train mode afterwards
                 self.model.train()
@@ -439,20 +452,26 @@ class Trainer:
         )
 
     def save_model(self, accuracy):
-        print(f"Saving model to {self.save_path}")
-        print("with accuracy of " + str(accuracy))
+        print(f"Saving model to {self.save_path} with accuracy of {accuracy*100:2.2f}")
         torch.save({
         'model': self.model.state_dict(),
         'accuracy': accuracy
         }, self.save_path)
 
     def validate(self):
-        # key = filename -> { label: x, preds = []}
+        # Structure of results dict:
+        # results = {
+        #   '<filename>': {
+        #       'label': 0...9
+        #       'logits': [[],...,[]]
+        #       'prediction': 0...9
+        #   }
+        # }
         results = {}
         total_loss = 0
 
-        # Turn on evaluation mode for network. This changes the behaviour of
-        # dropout and batch normalisation during validation.
+        # Turn on evaluation mode for network. This ensures that dropout is not applied 
+        # during validation and a different form of batch normalisation is used.
         self.model.eval()
 
         # No need to track gradients for validation, we're not optimizing.
@@ -463,9 +482,8 @@ class Trainer:
                 logits = self.model(batch)
                 loss = self.criterion(logits, labels)
                 total_loss += loss.item()
-                preds = logits.argmax(dim=-1).cpu().numpy()
 
-                # Populate dictionary with scores for each segment in this batch assigned to the filename
+                # Populate dictionary with logits for each segment in this batch assigned to the filename
                 for j, filename in enumerate(filenames):
                     current_logits = logits[j].cpu().tolist()
                     if filename not in results:
@@ -477,20 +495,24 @@ class Trainer:
                     else:
                         results[filename]["logits"].append(current_logits)
 
-        # Take the average across each class score for each file to get a prediction
+        # Take the average across each class score for each file to get their predictions
         results = compute_predictions(results)
 
+        # Get accuracy by checking for correct predictions across all predictions
         accuracy = compute_file_accuracy(results)
 
+        # Get per class accuracies and sort by label value (0...9)
         per_class_accuracies = compute_file_per_class_accuracies(results)
         per_class_accuracies = dict(sorted(per_class_accuracies.items()))
 
+        # Get average of class accuracies. Used as main metric for performance. 
         average_class_accuracy = sum(per_class_accuracies.values())/len(per_class_accuracies.keys())
 
+        # Get average loss
         average_loss = total_loss / len(self.test_loader)
 
         self.summary_writer.add_scalars(
-                "accuracy",
+                "average_class_accuracy",
                 {"test": average_class_accuracy},
                 self.step
         )
@@ -499,9 +521,8 @@ class Trainer:
                 {"test": average_loss},
                 self.step
         )
-
-        accuracy_percentage = accuracy * 100
-        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
+              
+        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
         return average_class_accuracy
 
@@ -559,18 +580,16 @@ class TSCNN_Validator:
         )
 
     def validate(self):
-        # key = filename -> { label: x, preds = []}
         results = {}
         lmc_results = {}
         mc_results = {}
         total_loss = 0
 
-        # Turn on evaluation mode for network. This changes the behaviour of
-        # dropout and batch normalisation during validation.
+        # Turn on evaluation mode for network.
         self.lmc_model.eval()
         self.mc_model.eval()
 
-        # No need to track gradients for validation, we're not optimizing.
+        # 1. Obtain logits for all samples using LMCNet
         with torch.no_grad():
             for i, (batch, labels, filenames) in enumerate(self.lmc_loader):
                 batch = batch.to(self.device)
@@ -580,7 +599,7 @@ class TSCNN_Validator:
                 total_loss += loss.item()
                 preds = logits.argmax(dim=-1).cpu().numpy()
 
-                # Populate dictionary with scores for each segment in this batch assigned to the filename
+                # Populate dictionary with logits for each segment in this batch assigned to the filename
                 for j, filename in enumerate(filenames):
                     current_logits = logits[j].cpu().tolist()
                     if filename not in lmc_results:
@@ -592,6 +611,7 @@ class TSCNN_Validator:
                     else:
                         lmc_results[filename]["logits"].append(current_logits)
 
+        # 2. Obtain logits for all samples using MCNet
         with torch.no_grad():
             for i, (batch, labels, filenames) in enumerate(self.mc_loader):
                 batch = batch.to(self.device)
@@ -613,16 +633,19 @@ class TSCNN_Validator:
                     else:
                         mc_results[filename]["logits"].append(current_logits)
 
+        # 3. Average logits across LMCNet and MCNet to get TSCNN logits and final predicitons
         results = lmc_results
         for filename in lmc_results.keys():
             for i in range (0, len(lmc_results[filename]["logits"])):
                 for j in range(0, len(lmc_results[filename]["logits"][i])):
+                    # Get average of both logits
                     results[filename]["logits"][i][j] = (lmc_results[filename]["logits"][i][j] + mc_results[filename]["logits"][i][j])/2
 
-        # Take the average across each class score for each file to get a prediction
+        # Final logits obtained, now take the average across each class score for each file to get a prediction
         results = compute_predictions(results)
 
         accuracy = compute_file_accuracy(results)
+
         per_class_accuracies = compute_file_per_class_accuracies(results)
         per_class_accuracies = dict(sorted(per_class_accuracies.items()))
 
@@ -630,7 +653,7 @@ class TSCNN_Validator:
         average_loss = total_loss / len(self.lmc_loader)
 
         self.summary_writer.add_scalars(
-                "accuracy",
+                "average_class_accuracy",
                 {"test": average_class_accuracy},
                 self.step
         )
@@ -639,37 +662,17 @@ class TSCNN_Validator:
                 {"test": average_loss},
                 self.step
         )
-        accuracy_percentage = accuracy * 100
-        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}")
+
+        print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
         return average_class_accuracy
 
-def compute_predictions(results: dict) -> dict:
 
-    for filename in results:
-        # Convert list ot logits for this file to numpy array
-        results[filename]["logits"] = np.asarray(results[filename]["logits"])
+'''''''''''''''''''''''''''''''''''''''''''''
+SEGMENT-LEVEL VALIDATION FUNCTIONS
+'''''''''''''''''''''''''''''''''''''''''''''
 
-        # Average scores across segments for each class
-        results[filename]["logits"] = np.mean(results[filename]["logits"], axis=0)
-
-        # Get index of highest scoring class
-        results[filename]["prediction"] = results[filename]["logits"].argmax(-1)
-
-    return results
-
-
-def compute_file_accuracy(results : dict) -> float:
-    correct = 0
-    for filename in results:
-        if (results[filename]["label"] == results[filename]["prediction"]):
-            correct += 1
-
-    return correct/len(results.keys())
-
-def compute_accuracy(
-    labels: Union[torch.Tensor, np.ndarray], preds: Union[torch.Tensor, np.ndarray]
-) -> float:
+def compute_accuracy(labels: Union[torch.Tensor, np.ndarray], preds: Union[torch.Tensor, np.ndarray]) -> float:
     """
     Args:
         labels: ``(batch_size, class_count)`` tensor or array containing example labels
@@ -677,28 +680,6 @@ def compute_accuracy(
     """
     assert len(labels) == len(preds)
     return float((labels == preds).sum()) / len(labels)
-
-
-def compute_file_per_class_accuracies(results : dict) -> float:
-
-    class_accuracies = {}
-
-    for filename in results:
-        label = results[filename]["label"].item()
-
-        if label not in class_accuracies.keys():
-            class_accuracies[label] = []
-
-        if label == results[filename]["prediction"]:
-            class_accuracies[label].append(1)
-        else:
-            class_accuracies[label].append(0)
-
-    for label in class_accuracies:
-        accuracy_count = class_accuracies[label]
-        class_accuracies[label] = sum(accuracy_count)/len(accuracy_count)
-
-    return class_accuracies
 
 def compute_per_class_accuracies(labels: Union[torch.Tensor, np.ndarray], preds: Union[torch.Tensor, np.ndarray]) -> float:
 
@@ -717,6 +698,61 @@ def compute_per_class_accuracies(labels: Union[torch.Tensor, np.ndarray], preds:
 
     return class_accuracies
 
+'''''''''''''''''''''''''''''''''''''''''''''
+FILE-LEVEL VALIDATION FUNCTIONS
+'''''''''''''''''''''''''''''''''''''''''''''
+
+def compute_predictions(results: dict) -> dict:
+    for filename in results:
+        # Convert list ot logits for this file to numpy array
+        results[filename]["logits"] = np.asarray(results[filename]["logits"])
+        # Average scores across segments for each class
+        results[filename]["logits"] = np.mean(results[filename]["logits"], axis=0)
+        # Get index of highest scoring class
+        results[filename]["prediction"] = results[filename]["logits"].argmax(-1)
+
+    # Return new results dict
+    return results
+
+def compute_file_accuracy(results : dict) -> float:
+    correct = 0
+    # Accumulate all correct predictions for files
+    for filename in results:
+        if (results[filename]["label"] == results[filename]["prediction"]):
+            correct += 1
+
+    return correct/len(results.keys())
+
+def compute_file_per_class_accuracies(results : dict) -> float:
+    
+    # Create dict where class_accuracies = { label: prediction_value }
+    class_accuracies = {}
+
+    for filename in results:
+        # Get label for particular audio clip
+        label = results[filename]["label"].item()
+
+        # Initialise list for specified label in class_accuracies if encountered for first time
+        if label not in class_accuracies.keys():
+            class_accuracies[label] = []
+
+        # Append 1 to list if right prediction, otherwise append 0
+        if label == results[filename]["prediction"]:
+            class_accuracies[label].append(1)
+        else:
+            class_accuracies[label].append(0)
+
+    # Each label now has a list of 1s and 0s representing right/wrong predictions
+    # Sum the list and divide by number of predictions to get the accuracy of the class
+    for label in class_accuracies:
+        accuracy_count = class_accuracies[label]
+        class_accuracies[label] = sum(accuracy_count)/len(accuracy_count)
+
+    return class_accuracies
+
+'''''''''''''''''''''''''''''''''''''''''''''
+LOGGING FUNCTIONS
+'''''''''''''''''''''''''''''''''''''''''''''
 def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
     """Get a unique directory that hasn't been logged to before for use with a TB
     SummaryWriter.
@@ -732,8 +768,7 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
     tb_log_dir_prefix = (
       f"CNN_bn_"
       f"mode={args.mode}_"
-      f"bs={args.batch_size}_"
-      f"lr={args.learning_rate}_"
+      f"decay={args.weight_decay}_"
       f"run_"
     )
     i = 0
@@ -743,6 +778,30 @@ def get_summary_writer_log_dir(args: argparse.Namespace) -> str:
             return str(tb_log_dir)
         i += 1
     return str(tb_log_dir)
+
+'''''''''''''''''''''''''''''''''''''''''''''
+OTHER FUNCTIONS
+'''''''''''''''''''''''''''''''''''''''''''''
+
+def initialise_checkpoint_path(mode):
+    if mode == 'MC':
+        args.checkpoint_path = Path("models/MC")
+        args.resume_checkpoint = Path("models/MC")
+    elif mode == 'MLMC':
+        args.checkpoint_path = Path("models/MLMC")
+        args.resume_checkpoint = Path("models/MLMC")
+    # In the case of TSCNN, ensure that LMCNet and MCNet has been trained and saved.
+    # Store the path of associated models.
+    elif mode == 'TSCNN':
+        if not Path("models/MC").exists():
+            print("MCNet model is not available, please train it seperately first.")
+            exit()
+        elif not Path("models/LMC").exists():
+            print("LMCNet model is not available, please train it seperately first.")
+            exit()
+        else:
+            lmc_model_path = Path("models/LMC")
+            mc_model_path = Path("models/MC")
 
 if __name__ == "__main__":
     main(parser.parse_args())
