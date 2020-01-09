@@ -134,6 +134,8 @@ def main(args):
     )
 
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+    # summary(model, (1, 85, 41))
+    # exit()
     if not args.mode == 'TSCNN' and args.resume_checkpoint.exists():
         checkpoint = torch.load(args.resume_checkpoint)
         print(f"Resuming model {args.resume_checkpoint} that achieved {checkpoint['accuracy']}% accuracy")
@@ -203,7 +205,6 @@ def main(args):
 
     summary_writer.close()
 
-
 class CNN(nn.Module):
     def __init__(self, height: int, width: int, channels: int, mode: str, class_count: int, dropout: float):
         super().__init__()
@@ -216,7 +217,8 @@ class CNN(nn.Module):
             in_channels=self.input_shape.channels, # Checkout input channel count
             out_channels=32,
             kernel_size=(3, 3),
-            padding=(1, 1),
+            stride=(2, 2),
+            padding=(43, 21),
             bias=False
         )
         self.initialise_layer(self.conv1)
@@ -227,7 +229,8 @@ class CNN(nn.Module):
             in_channels=32,
             out_channels=32,
             kernel_size=(3, 3),
-            padding=(1, 1),
+            stride=(2, 2),
+            padding=(43, 21),
             bias=False
         )
         self.initialise_layer(self.conv2)
@@ -239,7 +242,8 @@ class CNN(nn.Module):
             in_channels=32,
             out_channels=64,
             kernel_size=(3, 3),
-            padding=(1, 1),
+            stride=(2, 2),
+            padding=(22, 11),
             bias=False
         )
         self.initialise_layer(self.conv3)
@@ -495,7 +499,7 @@ class Trainer:
                 {"test": average_loss},
                 self.step
         )
-              
+
         accuracy_percentage = accuracy * 100
         print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy_percentage:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
