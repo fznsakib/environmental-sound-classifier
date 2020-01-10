@@ -40,7 +40,7 @@ parser.add_argument("--dataset-root", default=default_dataset_dir)
 parser.add_argument("--log-dir", default=Path("logs"), type=Path)
 parser.add_argument("--learning-rate", default=0.001, type=float, help="Learning rate")
 parser.add_argument("--sgd-momentum", default=0.9, type=float, help="SGD momentum")
-parser.add_argument("--dropout", default=0.5, type=float, help="Dropout probability")
+parser.add_argument("--dropout", default=0.2, type=float, help="Dropout probability")
 parser.add_argument("--weight-decay", default=0.0005, type=float, help="Weight decay for optimiser")
 parser.add_argument("--mode", default='LMC', type=str, help="Input type")
 parser.add_argument("--checkpoint-path", default=Path("models/LMC"), type=Path)
@@ -218,7 +218,7 @@ def main(args):
             pin_memory=True,
         )
         validator = TSCNN_Validator(
-            lmc_model, mc_model, lmc_loader, mc_loader, criterion, optimizer, 
+            lmc_model, mc_model, lmc_loader, mc_loader, criterion, optimizer,
             summary_writer, DEVICE, log_dir
         )
 
@@ -236,26 +236,93 @@ class CNN(nn.Module):
         self.class_count = class_count
         self.dropout = nn.Dropout(dropout)
 
+        # # First convolutional layer
+        # self.conv1 = nn.Conv2d(
+        #     in_channels=self.input_shape.channels,
+        #     out_channels=32,
+        #     kernel_size=(3, 3),
+        #     stride=(1, 1),
+        #     padding=(1, 1),
+        #     bias=False
+        # )
+        # self.initialise_layer(self.conv1)
+        # self.batchNorm1 = nn.BatchNorm2d(32)
+        #
+        # # Second convolutional layer
+        # self.conv2 = nn.Conv2d(
+        #     in_channels=32,
+        #     out_channels=32,
+        #     kernel_size=(3, 3),
+        #     stride=(1, 1),
+        #     padding=(1, 1),
+        #     bias=False
+        # )
+        # self.initialise_layer(self.conv2)
+        # self.batchNorm2 = nn.BatchNorm2d(32)
+        #
+        # # Max-pool of [2 x 2] - ceil_mode is True so that dimensions are rounded to ceiling
+        # # to obtain size of [21 x 43] as seen in Su et al's paper.
+        # self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
+        #
+        # # Third convolutional layer
+        # self.conv3 = nn.Conv2d(
+        #     in_channels=32,
+        #     out_channels=64,
+        #     kernel_size=(3, 3),
+        #     stride=(1, 1),
+        #     padding=(1, 1),
+        #     bias=False
+        # )
+        # self.initialise_layer(self.conv3)
+        # self.batchNorm3 = nn.BatchNorm2d(64)
+        #
+        # # Fourth convolutional layer
+        # self.conv4 = nn.Conv2d(
+        #     in_channels=64,
+        #     out_channels=64,
+        #     kernel_size=(3, 3),
+        #     stride=(2, 2),
+        #     padding=(1, 1),
+        #     bias=False
+        # )
+        # self.initialise_layer(self.conv4)
+        # self.batchNorm4 = nn.BatchNorm2d(64)
+        #
+        # # First fully connected layer
+        # # Input is the size of the output from conv4 multiplied by the 64 channels
+        # # 11 * 22 * 64 = 15488
+        # self.fc1 = nn.Linear(15488, 1024, bias=False)
+        #
+        # # Shape of tensor output from 4th layer will be different due to difference in
+        # # input dimensions for MLMC. So number of input features to FC1 will be different.
+        # if mode == 'MLMC':
+        #     self.fc1 = nn.Linear(26048, 1024, bias=False)
+        #
+        # self.initialise_layer(self.fc1)
+        #
+        # ## Second and final fully connected layer
+        # self.fc2 = nn.Linear(1024, 10, bias=False)
+        # self.initialise_layer(self.fc2)
+
         # First convolutional layer
         self.conv1 = nn.Conv2d(
             in_channels=self.input_shape.channels,
-            out_channels=32,
+            out_channels=16,
             kernel_size=(3, 3),
             stride=(1, 1),
             padding=(1, 1),
-            bias=False
         )
         self.initialise_layer(self.conv1)
-        self.batchNorm1 = nn.BatchNorm2d(32)
+        self.batchNorm1 = nn.BatchNorm2d(16)
+        self.pool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         # Second convolutional layer
         self.conv2 = nn.Conv2d(
-            in_channels=32,
+            in_channels=16,
             out_channels=32,
             kernel_size=(3, 3),
             stride=(1, 1),
             padding=(1, 1),
-            bias=False
         )
         self.initialise_layer(self.conv2)
         self.batchNorm2 = nn.BatchNorm2d(32)
@@ -271,27 +338,28 @@ class CNN(nn.Module):
             kernel_size=(3, 3),
             stride=(1, 1),
             padding=(1, 1),
-            bias=False
         )
         self.initialise_layer(self.conv3)
         self.batchNorm3 = nn.BatchNorm2d(64)
+        self.pool3 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         # Fourth convolutional layer
         self.conv4 = nn.Conv2d(
             in_channels=64,
-            out_channels=64,
+            out_channels=128,
             kernel_size=(3, 3),
-            stride=(2, 2),
+            stride=(1, 1),
             padding=(1, 1),
-            bias=False
         )
         self.initialise_layer(self.conv4)
-        self.batchNorm4 = nn.BatchNorm2d(64)
+        self.batchNorm4 = nn.BatchNorm2d(128)
+        self.pool4 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), ceil_mode=True)
 
         # First fully connected layer
         # Input is the size of the output from conv4 multiplied by the 64 channels
         # 11 * 22 * 64 = 15488
-        self.fc1 = nn.Linear(15488, 1024, bias=False)
+        self.fc1 = nn.Linear(2304, 1024)
+        self.batchNorm5 = nn.BatchNorm1d(1024)
 
         # Shape of tensor output from 4th layer will be different due to difference in
         # input dimensions for MLMC. So number of input features to FC1 will be different.
@@ -301,8 +369,10 @@ class CNN(nn.Module):
         self.initialise_layer(self.fc1)
 
         ## Second and final fully connected layer
-        self.fc2 = nn.Linear(1024, 10, bias=False)
+        self.fc2 = nn.Linear(1024, 10)
         self.initialise_layer(self.fc2)
+
+
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         # Each convolutional layer pass is followed by batch normalisation,
@@ -313,6 +383,7 @@ class CNN(nn.Module):
         x = self.conv1(images)
         x = self.batchNorm1(x)
         x = F.relu(x)
+        x = self.pool1(x)
 
         # Second convolutional layer pass
         # Max-pool applied at the end of it
@@ -323,15 +394,18 @@ class CNN(nn.Module):
         x = self.pool2(x)
 
         # Third convolutional layer pass
+        x = self.dropout(x)
         x = self.conv3(x)
         x = self.batchNorm3(x)
         x = F.relu(x)
+        x = self.pool3(x)
 
         # Fourth convolutional layer pass
         x = self.dropout(x)
         x = self.conv4(x)
         x = self.batchNorm4(x)
         x = F.relu(x)
+        x = self.pool4(x)
 
         # Flatten the output of the pooling layer so it is of shape
         # (32, 15488), ready for fc1 to take in as input.
@@ -342,8 +416,10 @@ class CNN(nn.Module):
         x = self.dropout(x)
         x = self.fc1(x)
         x = torch.sigmoid(x)
+        x = self.batchNorm5(x)
 
         # Second fully connected layer pass.
+        x = self.dropout(x)
         x = self.fc2(x)
 
         return x
@@ -383,7 +459,7 @@ class Trainer:
         self.checkpoint_frequency = checkpoint_frequency
         self.save_path = save_path
         self.log_dir = log_dir
-        
+
     def train(
         self,
         epochs: int,
@@ -437,7 +513,7 @@ class Trainer:
             if ((epoch + 1) % val_frequency) == 0:
                 validated_accuracy = self.validate()
                 # Save every args.checkpoint_frequency or if this is the last epoch
-                if (epoch + 1) % self.checkpoint_frequency or (epoch + 1) == epochs or epoch == 1:
+                if (epoch + 1) % self.checkpoint_frequency or (epoch + 1) == epochs:
                     self.save_model(validated_accuracy)
 
                 # self.validate() will put the model in validation mode,
@@ -494,7 +570,7 @@ class Trainer:
         results = {}
         total_loss = 0
 
-        # Turn on evaluation mode for network. This ensures that dropout is not applied 
+        # Turn on evaluation mode for network. This ensures that dropout is not applied
         # during validation and a different form of batch normalisation is used.
         self.model.eval()
 
@@ -529,7 +605,7 @@ class Trainer:
         per_class_accuracies = compute_file_per_class_accuracies(results)
         per_class_accuracies = dict(sorted(per_class_accuracies.items()))
 
-        # Get average of class accuracies. Used as main metric for performance. 
+        # Get average of class accuracies. Used as main metric for performance.
         average_class_accuracy = sum(per_class_accuracies.values())/len(per_class_accuracies.keys())
 
         # Get average loss
@@ -549,7 +625,7 @@ class Trainer:
 
         with open(self.log_dir+'/per_class_accuracies.json', 'w') as fp:
             json.dump(per_class_accuracies, fp)
-              
+
         print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
         return average_class_accuracy
@@ -757,7 +833,7 @@ def compute_file_accuracy(results : dict) -> float:
     return correct/len(results.keys())
 
 def compute_file_per_class_accuracies(results : dict) -> float:
-    
+
     # Create dict where class_accuracies = { label: prediction_value }
     class_accuracies = {}
 
