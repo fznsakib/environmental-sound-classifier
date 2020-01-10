@@ -1,0 +1,46 @@
+----------
+STRIDE = 1 // WEIGHT DECAY = 0.0005
+----------
+LMC
+
+validation loss: 1.20205, accuracy: 72.04, average class-wise accuracy: 74.46
+per class accuracies: {0: 0.35, 1: 0.9393939393939394, 2: 0.75, 3: 0.78, 4: 0.81, 5: 0.5591397849462365, 6: 0.875, 7: 0.9895833333333334, 8: 0.6626506024096386, 9: 0.73}
+
+MC
+
+validation loss: 0.96415, accuracy: 80.41, average class-wise accuracy: 81.37
+per class accuracies: {0: 0.7, 1: 0.8181818181818182, 2: 0.75, 3: 0.78, 4: 0.83, 5: 0.7956989247311828, 6: 0.96875, 7: 1.0, 8: 0.6144578313253012, 9: 0.88}
+
+MLMC
+
+validation loss: 1.15642, accuracy: 74.79, average class-wise accuracy: 76.79
+per class accuracies: {0: 0.41, 1: 0.9090909090909091, 2: 0.84, 3: 0.82, 4: 0.86, 5: 0.5053763440860215, 6: 0.90625, 7: 0.9791666666666666, 8: 0.6987951807228916, 9: 0.75}
+
+TSCNN
+
+validation loss: 2.16620, accuracy: 77.42, average class-wise accuracy: 79.50
+per class accuracies: {0: 0.49, 1: 0.9090909090909091, 2: 0.77, 3: 0.78, 4: 0.83, 5: 0.7419354838709677, 6: 0.96875, 7: 1.0, 8: 0.6506024096385542, 9: 0.81}
+
+----------
+STRIDE = 1 // WEIGHT DECAY = 0.0005 // RUN 2
+----------
+LMC
+
+validation loss: 1.04669, accuracy: 76.58, average class-wise accuracy: 78.06
+per class accuracies: {0: 0.63, 1: 0.9393939393939394, 2: 0.78, 3: 0.77, 4: 0.86, 5: 0.5913978494623656, 6: 0.875, 7: 1.0, 8: 0.5301204819277109, 9: 0.83}
+
+MC
+
+validation loss: 1.09852, accuracy: 77.42, average class-wise accuracy: 76.05
+per class accuracies: {0: 0.7, 1: 0.42424242424242425, 2: 0.86, 3: 0.77, 4: 0.7, 5: 0.7634408602150538, 6: 0.96875, 7: 0.9166666666666666, 8: 0.5421686746987951, 9: 0.96}
+
+MLMC
+
+validation loss: 0.88624, accuracy: 76.46, average class-wise accuracy: 77.93
+per class accuracies: {0: 0.57, 1: 0.8787878787878788, 2: 0.87, 3: 0.74, 4: 0.9, 5: 0.6451612903225806, 6: 0.9375, 7: 0.9270833333333334, 8: 0.4939759036144578, 9: 0.83}
+
+TSCNN
+
+validation loss: 2.14521, accuracy: 81.12, average class-wise accuracy: 81.82
+per class accuracies: {0: 0.73, 1: 0.8484848484848485, 2: 0.86, 3: 0.76, 4: 0.87, 5: 0.7204301075268817, 6: 0.9375, 7: 0.9895833333333334, 8: 0.5662650602409639, 9: 0.9}
+
