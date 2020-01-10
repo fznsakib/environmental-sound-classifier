@@ -7,6 +7,7 @@ from multiprocessing import cpu_count
 from typing import Union, NamedTuple
 import sys
 import os
+import json
 import torch
 import argparse
 import torch.backends.cudnn
@@ -176,7 +177,7 @@ def main(args):
 
         trainer = Trainer(
             model, train_loader, test_loader, criterion, optimizer, summary_writer, DEVICE,
-            args.checkpoint_frequency, args.checkpoint_path
+            args.checkpoint_frequency, args.checkpoint_path, log_dir
         )
 
         trainer.train(
@@ -217,7 +218,8 @@ def main(args):
             pin_memory=True,
         )
         validator = TSCNN_Validator(
-            lmc_model, mc_model, lmc_loader, mc_loader, criterion, optimizer, summary_writer, DEVICE
+            lmc_model, mc_model, lmc_loader, mc_loader, criterion, optimizer, 
+            summary_writer, DEVICE, log_dir
         )
 
         validator.validate()
@@ -367,7 +369,8 @@ class Trainer:
         summary_writer: SummaryWriter,
         device: torch.device,
         checkpoint_frequency: int,
-        save_path: Path
+        save_path: Path,
+        log_dir: str
     ):
         self.model = model.to(device)
         self.device = device
@@ -379,7 +382,8 @@ class Trainer:
         self.step = 0
         self.checkpoint_frequency = checkpoint_frequency
         self.save_path = save_path
-
+        self.log_dir = log_dir
+        
     def train(
         self,
         epochs: int,
@@ -531,6 +535,7 @@ class Trainer:
         # Get average loss
         average_loss = total_loss / len(self.test_loader)
 
+        # Log metrics
         self.summary_writer.add_scalars(
                 "average_class_accuracy",
                 {"test": average_class_accuracy},
@@ -541,6 +546,9 @@ class Trainer:
                 {"test": average_loss},
                 self.step
         )
+
+        with open(self.log_dir+'/per_class_accuracies.json', 'w') as fp:
+            json.dump(per_class_accuracies, fp)
               
         print(f"validation loss: {average_loss:.5f}, accuracy: {accuracy * 100:2.2f}, average class-wise accuracy: {average_class_accuracy * 100:2.2f}")
         print(f"per class accuracies: {per_class_accuracies}")
@@ -557,6 +565,7 @@ class TSCNN_Validator:
         optimizer: Optimizer,
         summary_writer: SummaryWriter,
         device: torch.device,
+        log_dir: str
     ):
         self.lmc_model = lmc_model.to(device)
         self.mc_model = mc_model.to(device)
@@ -567,6 +576,7 @@ class TSCNN_Validator:
         self.optimizer = optimizer
         self.summary_writer = summary_writer
         self.step = 0
+        self.log_dir = log_dir
 
     def print_metrics(self, epoch, accuracy, loss, data_load_time, step_time):
         epoch_step = self.step % len(self.train_loader)
@@ -671,6 +681,9 @@ class TSCNN_Validator:
 
         average_class_accuracy = sum(per_class_accuracies.values())/len(per_class_accuracies.keys())
         average_loss = total_loss / len(self.lmc_loader)
+
+        with open(self.log_dir+'/per_class_accuracies.json', 'w') as fp:
+            json.dump(per_class_accuracies, fp)
 
         self.summary_writer.add_scalars(
                 "average_class_accuracy",
