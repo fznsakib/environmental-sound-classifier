@@ -4,6 +4,7 @@ from multiprocessing import cpu_count
 from typing import Union, NamedTuple
 
 import sys
+import math
 import os
 import torch
 import torch.backends.cudnn
@@ -110,11 +111,34 @@ def main(args):
         num_workers=args.worker_count,
         pin_memory=True,
     )
-    for i, (input, labels, filename) in enumerate(test_loader):
-        if i == 100:
+    
+    file_counter = 0
+    for i, (input, labels, filenames) in enumerate(test_loader):
+        # print(input.shape)
+        # print(filename)
+        # print(i)
+        
+        index = -1
+        chosen_filename = '106014-5-0-3.wav'
+        file_found = False
+        indexes =[]
+
+        for j, filename in enumerate(filenames):
+            if (filenames[j] == chosen_filename):
+                index = j
+                indexes.append(j)
+                file_found = True
+                file_counter += 1
+        
+        # 106014-5-0-1.wav
+        # 106014-5-0-3.wav
+
+        if file_found:
+            print(indexes)
+            middle_index = indexes[math.floor(len(indexes)/2)]
+            print(f"printing the {middle_index}th image of batch {i} for filename {chosen_filename}")
             img = input
-            print(input.shape)
-            img = img[16].data.numpy()
+            img = img[index].data.numpy()
             img = np.squeeze(img)
             # Resize
             new_img = np.zeros(np.array(img.shape) * 10)
@@ -135,9 +159,9 @@ def main(args):
                 plt.imsave('spectral_contrast.jpg', new_img, format='jpg')
             elif args.mode == 'TN':
                 plt.imsave('tonnetz.jpg', new_img, format='jpg')
-            print(labels.shape)
-            print(filename)
 
+            
+    print(file_counter)
     exit()
 
     model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
