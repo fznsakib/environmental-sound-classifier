@@ -48,6 +48,11 @@ parser.add_argument("--checkpoint-frequency", type=int, default=1, help="Save a 
 parser.add_argument("--resume-checkpoint", default=Path("models/LMC"), type=Path)
 parser.add_argument("--validate-only", default=False, type=bool)
 parser.add_argument(
+    "--improvement", 
+    action='store_true',
+    help='Activate improvement as stated in report. Involves additional dropout for conv3 and fc2.'
+)
+parser.add_argument(
     "--batch-size",
     default=32,
     type=int,
@@ -128,11 +133,11 @@ def main(args):
             mc_model_path = Path("models/MC")
 
     # Initialise convolutional neural network with input
-    model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+    model = CNN(height=85, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout, improvement=args.improvement)
 
-    # MLMC input has different size for update CNN accordingly
+    # MLMC input has different size so update CNN accordingly
     if args.mode == 'MLMC':
-        model = CNN(height=145, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout)
+        model = CNN(height=145, width=41, channels=1, class_count=10, mode=args.mode, dropout=args.dropout, improvement=args.improvement)
 
     # Define loss criterion to be softmax cross entropy
     criterion = nn.CrossEntropyLoss()
@@ -230,11 +235,12 @@ def main(args):
 CNN DEFINITION
 '''''''''''''''''''''''''''''''''''''''''''''
 class CNN(nn.Module):
-    def __init__(self, height: int, width: int, channels: int, mode: str, class_count: int, dropout: float):
+    def __init__(self, height: int, width: int, channels: int, mode: str, class_count: int, dropout: float, improvement_on: bool):
         super().__init__()
         self.input_shape = ImageShape(height=height, width=width, channels=channels)
         self.class_count = class_count
         self.dropout = nn.Dropout(dropout)
+        self.improvement_on = improvement_on
 
         # First convolutional layer
         self.conv1 = nn.Conv2d(
@@ -323,7 +329,8 @@ class CNN(nn.Module):
         x = self.pool2(x)
 
         # Third convolutional layer pass
-        x = self.dropout(x)
+        if (self.improvement_on):
+            x = self.dropout(x)
         x = self.conv3(x)
         x = self.batchNorm3(x)
         x = F.relu(x)
@@ -345,7 +352,8 @@ class CNN(nn.Module):
         x = torch.sigmoid(x)
 
         # Second fully connected layer pass.
-        x = self.dropout(x)
+        if (self.improvement_on):
+            x = self.dropout(x)
         x = self.fc2(x)
 
         return x
