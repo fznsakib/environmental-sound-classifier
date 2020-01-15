@@ -1,2 +1,4 @@
-CW/data/
+data/UrbanSound8K_test.pkl
+data/UrbanSound8K_train.pkl
+.vscode/
 *.DS_Store
